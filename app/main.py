@@ -49,7 +49,7 @@ class ScanRequest(BaseModel):
 @app.get("/")
 def home():
     return FileResponse(
-        "app/static/index.html"
+        "static/index.html"
     )
 
 
