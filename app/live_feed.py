@@ -174,9 +174,9 @@ class LiveFeed:
 
             await asyncio.sleep(5)
 
-    def _receive_tick(self, message: Any) -> None:
-        # pysignalr commonly supplies hub arguments as a list.
-        # Accept both list and direct-dict forms.
+    async def _receive_tick(self, message: Any) -> None:
+        # pysignalr event callbacks are async. Hub arguments are commonly
+        # delivered as a list, but accept a direct dict as well.
         if isinstance(message, list):
             for item in message:
                 if isinstance(item, dict):
@@ -185,11 +185,17 @@ class LiveFeed:
         if isinstance(message, dict):
             self._handle_tick(message)
 
-    def _on_open(self) -> None:
+    async def _on_open(self) -> None:
         self.connected = True
         self.stream_error = None
-        if self._client is not None:
-            self._client.send("Subscribe", [[self.symbol]])
+        try:
+            if self._client is not None:
+                # IMPORTANT: pysignalr.send() is async and must be awaited.
+                # Without awaiting this subscription, the hub can connect
+                # while ReceiveTick never starts arriving.
+                await self._client.send("Subscribe", [[self.symbol]])
+        except Exception as exc:
+            self.stream_error = f"SignalR subscribe: {exc}"
 
     async def start(self) -> None:
         if self._task and not self._task.done():
