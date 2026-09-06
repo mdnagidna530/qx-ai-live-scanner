@@ -30,6 +30,7 @@ class LiveFeed:
         self.stream_error: str | None = None
         self._client: SignalRClient | None = None
         self._task: asyncio.Task | None = None
+        self._snapshot_task: asyncio.Task | None = None
 
     def load_history(self) -> None:
         for interval, target in (
@@ -67,14 +68,31 @@ class LiveFeed:
             price = float(data["mid"])
             if price <= 0:
                 return False
-            self.last_price = price
-            self.price_source = data.get("source")
-            self.market_state = data.get("marketState")
-            self.stale = bool(data.get("stale", False))
+
+            # Verified REST price is only a live-price fallback.
+            # It is NEVER converted into fake 5-second ticks.
+            tick_age = time.time() - self.last_tick_time if self.last_tick_time else None
+            if tick_age is None or tick_age > 10:
+                self.last_price = price
+                self.price_source = data.get("source")
+                self.market_state = data.get("marketState")
+                self.stale = bool(data.get("stale", False))
+
             return True
         except Exception as exc:
-            self.stream_error = f"REST snapshot: {exc}"
+            if not self.last_price:
+                self.stream_error = f"REST snapshot: {exc}"
             return False
+
+    async def snapshot_loop(self) -> None:
+        while True:
+            try:
+                self.refresh_snapshot()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.stream_error = f"Snapshot loop: {exc}"
+            await asyncio.sleep(3)
 
     def _handle_tick(self, tick: dict[str, Any]) -> None:
         if str(tick.get("symbol", "")).upper() != self.symbol:
@@ -85,6 +103,7 @@ class LiveFeed:
             return
         if price <= 0:
             return
+
         timestamp = self._timestamp(tick.get("timestamp")) or time.time()
         self.ticks_5s.append({"timestamp": timestamp, "price": price})
         self.last_price = price
@@ -105,12 +124,14 @@ class LiveFeed:
         if not candles:
             candles.append(self._new_candle(bucket, price))
             return
+
         current = candles[-1]
         if int(current["timestamp"]) != bucket:
             candles.append(self._new_candle(bucket, price))
             if len(candles) > 600:
                 del candles[:-600]
             return
+
         current["high"] = max(float(current["high"]), price)
         current["low"] = min(float(current["low"]), price)
         current["close"] = price
@@ -119,8 +140,12 @@ class LiveFeed:
     @staticmethod
     def _new_candle(timestamp: int, price: float) -> dict[str, Any]:
         return {
-            "timestamp": timestamp, "open": price, "high": price,
-            "low": price, "close": price, "volume": 1.0
+            "timestamp": timestamp,
+            "open": price,
+            "high": price,
+            "low": price,
+            "close": price,
+            "volume": 1.0,
         }
 
     async def connect(self) -> None:
@@ -128,24 +153,35 @@ class LiveFeed:
             await asyncio.to_thread(self.load_history)
         except Exception as exc:
             self.stream_error = f"History: {exc}"
-        try:
-            client = SignalRClient(BIQUOTE_HUB)
-            self._client = client
-            client.on("ReceiveTick", self._receive_tick)
-            client.on_open(self._on_open)
-            self.connected = False
-            await client.run()
-        except Exception as exc:
-            self.connected = False
-            self.stream_error = f"SignalR: {exc}"
-        finally:
-            self.connected = False
+
+        # Keep reconnecting the real SignalR stream after temporary failures.
+        while True:
+            try:
+                client = SignalRClient(BIQUOTE_HUB)
+                self._client = client
+                client.on("ReceiveTick", self._receive_tick)
+                client.on_open(self._on_open)
+                self.connected = False
+                await client.run()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.connected = False
+                self.stream_error = f"SignalR: {exc}"
+            finally:
+                self.connected = False
+                self._client = None
+
+            await asyncio.sleep(5)
 
     def _receive_tick(self, message: Any) -> None:
+        # pysignalr commonly supplies hub arguments as a list.
+        # Accept both list and direct-dict forms.
         if isinstance(message, list):
-            if not message:
-                return
-            message = message[0]
+            for item in message:
+                if isinstance(item, dict):
+                    self._handle_tick(item)
+            return
         if isinstance(message, dict):
             self._handle_tick(message)
 
@@ -158,12 +194,17 @@ class LiveFeed:
     async def start(self) -> None:
         if self._task and not self._task.done():
             return
+
         self._task = asyncio.create_task(self.connect())
+
+        if not self._snapshot_task or self._snapshot_task.done():
+            self._snapshot_task = asyncio.create_task(self.snapshot_loop())
 
     def get_data(self) -> dict[str, Any]:
         now = time.time()
         age = now - self.last_tick_time if self.last_tick_time else None
         recent = self._recent_5_seconds()
+
         return {
             "symbol": self.symbol,
             "connected": self.connected,
@@ -188,15 +229,18 @@ class LiveFeed:
     def _timestamp(value: Any) -> float:
         if value is None:
             return 0.0
+
         if isinstance(value, (int, float)):
             n = float(value)
             return n / 1000 if n > 100_000_000_000 else n
+
         text = str(value).strip()
         try:
             n = float(text)
             return n / 1000 if n > 100_000_000_000 else n
         except ValueError:
             pass
+
         try:
             return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
         except Exception:
@@ -212,6 +256,7 @@ def get_live_snapshot(symbol: str = DEFAULT_SYMBOL) -> dict[str, Any]:
     )
     r.raise_for_status()
     data = r.json()
+
     return {
         "symbol": symbol,
         "price": float(data["mid"]),
