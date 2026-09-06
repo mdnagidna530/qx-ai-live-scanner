@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<title>QX AI Live Scanner V4</title>
+
+<style>
+*{
+    box-sizing:border-box;
+}
+
+body{
+    margin:0;
+    background:#080d14;
+    color:#e8eef7;
+    font-family:Arial,Helvetica,sans-serif;
+}
+
+.container{
+    width:min(1100px,94%);
+    margin:auto;
+}
+
+header{
+    padding:22px 0 14px;
+    border-bottom:1px solid #1d2938;
+}
+
+.logo{
+    font-size:25px;
+    font-weight:800;
+    letter-spacing:.3px;
+}
+
+.sub{
+    color:#7f8da0;
+    font-size:13px;
+    margin-top:5px;
+}
+
+.status{
+    margin:18px 0;
+    padding:12px 15px;
+    border:1px solid #253244;
+    border-radius:10px;
+    background:#0d141e;
+    font-size:13px;
+}
+
+.dot{
+    display:inline-block;
+    width:9px;
+    height:9px;
+    border-radius:50%;
+    background:#777;
+    margin-right:7px;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+}
+
+.card{
+    background:#0d141e;
+    border:1px solid #202d3d;
+    border-radius:14px;
+    padding:18px;
+}
+
+.card h2{
+    font-size:16px;
+    margin:0 0 15px;
+}
+
+label{
+    display:block;
+    font-size:12px;
+    color:#91a0b2;
+    margin:12px 0 6px;
+}
+
+input,textarea,select{
+    width:100%;
+    border:1px solid #29384b;
+    background:#080e16;
+    color:#e8eef7;
+    border-radius:9px;
+    padding:12px;
+    outline:none;
+}
+
+textarea{
+    min-height:105px;
+    resize:vertical;
+    font-family:monospace;
+    font-size:12px;
+}
+
+button{
+    width:100%;
+    border:0;
+    border-radius:10px;
+    padding:13px;
+    margin-top:14px;
+    font-weight:700;
+    cursor:pointer;
+}
+
+.primary{
+    background:#237a4b;
+    color:white;
+}
+
+.secondary{
+    background:#1a2635;
+    color:#dce6f2;
+}
+
+button:disabled{
+    opacity:.45;
+    cursor:not-allowed;
+}
+
+.signal{
+    min-height:210px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    text-align:center;
+}
+
+.signal-word{
+    font-size:48px;
+    font-weight:900;
+    letter-spacing:2px;
+}
+
+.no-trade{
+    color:#9aa7b7;
+}
+
+.call{
+    color:#35d477;
+}
+
+.put{
+    color:#ff6674;
+}
+
+.confidence{
+    margin-top:8px;
+    color:#aab7c7;
+}
+
+.reason{
+    margin-top:14px;
+    padding:12px;
+    width:100%;
+    background:#080e16;
+    border-radius:9px;
+    color:#aab7c7;
+    font-size:12px;
+    line-height:1.6;
+}
+
+.metrics{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:9px;
+    margin-top:14px;
+}
+
+.metric{
+    background:#080e16;
+    border:1px solid #1d2938;
+    border-radius:9px;
+    padding:12px;
+}
+
+.metric-title{
+    font-size:10px;
+    color:#718095;
+}
+
+.metric-value{
+    font-size:15px;
+    font-weight:700;
+    margin-top:5px;
+}
+
+.full{
+    grid-column:1/-1;
+}
+
+.history{
+    max-height:230px;
+    overflow:auto;
+    font-size:12px;
+}
+
+.history-row{
+    display:flex;
+    justify-content:space-between;
+    padding:10px 4px;
+    border-bottom:1px solid #182332;
+}
+
+.warning{
+    color:#e4a84c;
+}
+
+.success{
+    color:#38d47a;
+}
+
+.error{
+    color:#ff6674;
+}
+
+footer{
+    text-align:center;
+    padding:25px 0;
+    color:#657387;
+    font-size:11px;
+}
+
+@media(max-width:720px){
+    .grid{
+        grid-template-columns:1fr;
+    }
+
+    .full{
+        grid-column:auto;
+    }
+
+    .signal-word{
+        font-size:40px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<header>
+    <div class="logo">QX AI LIVE SCANNER <span style="color:#5e8cff">V4</span></div>
+    <div class="sub">
+        Signal-only market analysis • Manual trading • No automatic execution
+    </div>
+</header>
+
+<div class="status">
+    <span id="statusDot" class="dot"></span>
+    <span id="statusText">SYSTEM NOT CONNECTED</span>
+</div>
+
+<div class="grid">
+
+<!-- LOGIN -->
+
+<div class="card">
+    <h2>🔐 Secure Access</h2>
+
+    <label>Password</label>
+
+    <input
+        id="password"
+        type="password"
+        placeholder="Enter password"
+        autocomplete="off"
+    >
+
+    <button
+        class="primary"
+        id="loginBtn"
+        onclick="login()"
+    >
+        LOGIN
+    </button>
+
+    <div
+        id="loginMessage"
+        style="margin-top:10px;font-size:12px"
+    ></div>
+</div>
+
+
+<!-- MARKET -->
+
+<div class="card">
+    <h2>📊 Market Scanner</h2>
+
+    <label>Market / Symbol</label>
+
+    <input
+        id="symbol"
+        value="SELECT MARKET"
+        placeholder="Example: EURUSD"
+    >
+
+    <label>Analysis Mode</label>
+
+    <select id="mode">
+        <option value="strict">STRICT — HIGH FILTER</option>
+        <option value="balanced">BALANCED</option>
+    </select>
+
+    <button
+        class="secondary"
+        id="scanBtn"
+        onclick="requestScan()"
+        disabled
+    >
+        SCAN MARKET
+    </button>
+</div>
+
+
+<!-- SIGNAL -->
+
+<div class="card full">
+
+    <h2>🧠 LIVE DECISION</h2>
+
+    <div class="signal">
+
+        <div
+            id="signal"
+            class="signal-word no-trade"
+        >
+            NO TRADE
+        </div>
+
+        <div
+            id="confidence"
+            class="confidence"
+        >
+            Waiting for verified live data
+        </div>
+
+        <div
+            id="reason"
+            class="reason"
+        >
+            The scanner will not generate a CALL or PUT
+            without valid market data and required confirmation.
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- MARKET STATE -->
+
+<div class="card full">
+
+    <h2>📈 Market State</h2>
+
+    <div class="metrics">
+
+        <div class="metric">
+            <div class="metric-title">1 MIN</div>
+            <div
+                id="m1"
+                class="metric-value"
+            >
+                WAITING
+            </div>
+        </div>
+
+        <div class="metric">
+            <div class="metric-title">5 MIN</div>
+            <div
+                id="m5"
+                class="metric-value"
+            >
+                WAITING
+            </div>
+        </div>
+
+        <div class="metric">
+            <div class="metric-title">15 MIN</div>
+            <div
+                id="m15"
+                class="metric-value"
+            >
+                WAITING
+            </div>
+        </div>
+
+        <div class="metric">
+            <div class="metric-title">5S CONFIRMATION</div>
+            <div
+                id="m5s"
+                class="metric-value"
+            >
+                REQUIRED
+            </div>
+        </div>
+
+        <div class="metric">
+            <div class="metric-title">MOMENTUM</div>
+            <div
+                id="momentum"
+                class="metric-value"
+            >
+                WAITING
+            </div>
+        </div>
+
+        <div class="metric">
+            <div class="metric-title">VOLATILITY</div>
+            <div
+                id="volatility"
+                class="metric-value"
+            >
+                WAITING
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- DATA INPUT / CONNECTION -->
+
+<div class="card full">
+
+    <h2>🔌 Verified Market Data</h2>
+
+    <div class="warning">
+        LIVE DATA REQUIRED
+    </div>
+
+    <p style="font-size:12px;color:#8290a2;line-height:1.6">
+        This scanner does not manufacture candles or 5-second ticks.
+        A CALL/PUT decision requires a real authorized market-data
+        connection.
+    </p>
+
+    <label>1M Candle Data — JSON</label>
+
+    <textarea
+        id="data1m"
+        placeholder='Verified 1-minute candle data'
+    ></textarea>
+
+    <label>5M Candle Data — JSON</label>
+
+    <textarea
+        id="data5m"
+        placeholder='Verified 5-minute candle data'
+    ></textarea>
+
+    <label>15M Candle Data — JSON</label>
+
+    <textarea
+        id="data15m"
+        placeholder='Verified 15-minute candle data'
+    ></textarea>
+
+    <label>5-Second Tick Data — JSON</label>
+
+    <textarea
+        id="data5s"
+        placeholder='Verified 5-second tick data'
+    ></textarea>
+
+</div>
+
+
+<!-- HISTORY -->
+
+<div class="card full">
+
+    <h2>🕘 Signal History</h2>
+
+    <div
+        id="history"
+        class="history"
+    >
+        <div style="color:#657387">
+            No signals yet.
+        </div>
+    </div>
+
+</div>
+
+</div>
+
+<footer>
+    QX AI Live Scanner V4 • Manual trading only •
+    No automatic trade execution
+</footer>
+
+</div>
+
+
+<script>
+
+let sessionToken = null;
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+function setStatus(text, type="normal") {
+
+    const dot =
+        document.getElementById("statusDot");
+
+    const label =
+        document.getElementById("statusText");
+
+    label.textContent = text;
+
+    dot.style.background =
+        type === "success" ? "#35d477" :
+        type === "error" ? "#ff6674" :
+        "#777";
+}
+
+
+/* =========================================================
+   LOGIN
+========================================================= */
+
+async function login() {
+
+    const password =
+        document.getElementById("password").value;
+
+    const message =
+        document.getElementById("loginMessage");
+
+    if (!password) {
+
+        message.textContent =
+            "Password required.";
+
+        message.className = "error";
+
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch("/api/login", {
+
+                method:"POST",
+
+                headers:{
+                    "Content-Type":
+                    "application/json"
+                },
+
+                body:JSON.stringify({
+                    password:password
+                })
+
+            });
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Login failed"
+            );
+        }
+
+        const data =
+            await response.json();
+
+        sessionToken =
+            data.token;
+
+        document
+            .getElementById("scanBtn")
+            .disabled = false;
+
+        message.textContent =
+            "Login successful.";
+
+        message.className =
+            "success";
+
+        setStatus(
+            "SYSTEM READY — AUTHENTICATED",
+            "success"
+        );
+
+    } catch(error) {
+
+        sessionToken = null;
+
+        message.textContent =
+            "Authentication failed.";
+
+        message.className =
+            "error";
+
+        setStatus(
+            "AUTHENTICATION FAILED",
+            "error"
+        );
+    }
+}
+
+
+/* =========================================================
+   SAFE JSON
+========================================================= */
+
+function parseJSON(id) {
+
+    const value =
+        document.getElementById(id).value.trim();
+
+    if (!value) {
+
+        return [];
+    }
+
+    try {
+
+        return JSON.parse(value);
+
+    } catch(error) {
+
+        throw new Error(
+            "Invalid JSON in " + id
+        );
+    }
+}
+
+
+/* =========================================================
+   SCAN
+========================================================= */
+
+async function requestScan() {
+
+    if (!sessionToken) {
+
+        alert(
+            "Please login first."
+        );
+
+        return;
+    }
+
+    const button =
+        document.getElementById("scanBtn");
+
+    button.disabled = true;
+    button.textContent =
+        "ANALYZING...";
+
+    setStatus(
+        "ANALYZING VERIFIED MARKET DATA..."
+    );
+
+    try {
+
+        const payload = {
+
+            candles_1m:
+                parseJSON("data1m"),
+
+            candles_5m:
+                parseJSON("data5m"),
+
+            candles_15m:
+                parseJSON("data15m"),
+
+            ticks_5s:
+                parseJSON("data5s")
+        };
+
+
+        /*
+         * Do not fabricate data.
+         *
+         * If no verified feed is connected,
+         * backend should return NO TRADE.
+         */
+
+        const response =
+            await fetch("/api/scan", {
+
+                method:"POST",
+
+                headers:{
+
+                    "Content-Type":
+                        "application/json",
+
+                    "X-Session":
+                        sessionToken
+                },
+
+                body:
+                    JSON.stringify(payload)
+            });
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Scanner request failed"
+            );
+        }
+
+
+        const result =
+            await response.json();
+
+
+        displayResult(result);
+
+
+    } catch(error) {
+
+        displayNoTrade(
+            error.message
+        );
+
+        setStatus(
+            "DATA / SCANNER ERROR",
+            "error"
+        );
+
+    } finally {
+
+        button.disabled = false;
+
+        button.textContent =
+            "SCAN MARKET";
+    }
+}
+
+
+/* =========================================================
+   DISPLAY RESULT
+========================================================= */
+
+function displayResult(result) {
+
+    const signal =
+        String(
+            result.signal ||
+            result.decision ||
+            "NO TRADE"
+        ).toUpperCase();
+
+    const confidence =
+        result.confidence ??
+        result.score ??
+        "—";
+
+    const reason =
+        result.reason ||
+        result.message ||
+        "Analysis completed.";
+
+
+    const signalBox =
+        document.getElementById("signal");
+
+    signalBox.textContent =
+        signal;
+
+    signalBox.className =
+        "signal-word " +
+        (
+            signal === "CALL"
+                ? "call"
+                : signal === "PUT"
+                    ? "put"
+                    : "no-trade"
+        );
+
+
+    document
+        .getElementById("confidence")
+        .textContent =
+        "Confidence / Score: " +
+        confidence;
+
+
+    document
+        .getElementById("reason")
+        .textContent =
+        reason;
+
+
+    updateMetric(
+        "m1",
+        result.m1 ||
+        result.trend_1m ||
+        "—"
+    );
+
+    updateMetric(
+        "m5",
+        result.m5 ||
+        result.trend_5m ||
+        "—"
+    );
+
+    updateMetric(
+        "m15",
+        result.m15 ||
+        result.trend_15m ||
+        "—"
+    );
+
+    updateMetric(
+        "m5s",
+        result.confirmation_5s ||
+        result.confirmation ||
+        "—"
+    );
+
+    updateMetric(
+        "momentum",
+        result.momentum ||
+        "—"
+    );
+
+    updateMetric(
+        "volatility",
+        result.volatility ||
+        "—"
+    );
+
+
+    addHistory(
+        signal,
+        confidence
+    );
+
+    setStatus(
+        "ANALYSIS COMPLETE",
+        "success"
+    );
+}
+
+
+/* =========================================================
+   NO TRADE
+========================================================= */
+
+function displayNoTrade(reason) {
+
+    const signal =
+        document.getElementById("signal");
+
+    signal.textContent =
+        "NO TRADE";
+
+    signal.className =
+        "signal-word no-trade";
+
+    document
+        .getElementById("confidence")
+        .textContent =
+        "No verified signal";
+
+    document
+        .getElementById("reason")
+        .textContent =
+        reason ||
+        "Insufficient verified market data.";
+}
+
+
+/* =========================================================
+   METRIC
+========================================================= */
+
+function updateMetric(
+    id,
+    value
+) {
+
+    document
+        .getElementById(id)
+        .textContent =
+        String(value).toUpperCase();
+}
+
+
+/* =========================================================
+   HISTORY
+========================================================= */
+
+function addHistory(
+    signal,
+    confidence
+) {
+
+    const history =
+        document.getElementById(
+            "history"
+        );
+
+    const empty =
+        history.querySelector(
+            "div[style]"
+        );
+
+    if (empty) {
+
+        history.innerHTML = "";
+    }
+
+    const row =
+        document.createElement(
+            "div"
+        );
+
+    row.className =
+        "history-row";
+
+    row.innerHTML =
+
+        "<span>" +
+        new Date().toLocaleTimeString() +
+        "</span>" +
+
+        "<strong>" +
+        signal +
+        "</strong>" +
+
+        "<span>" +
+        confidence +
+        "</span>";
+
+    history.prepend(row);
+}
+
+
+/* =========================================================
+   INITIAL HEALTH CHECK
+========================================================= */
+
+async function healthCheck() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/health"
+            );
+
+        if (!response.ok) {
+
+            throw new Error();
+        }
+
+        const data =
+            await response.json();
+
+        if (data.ok) {
+
+            setStatus(
+                "SERVER ONLINE — LOGIN REQUIRED"
+            );
+        }
+
+    } catch(error) {
+
+        setStatus(
+            "SERVER OFFLINE",
+            "error"
+        );
+    }
+}
+
+
+healthCheck();
+
+</script>
+
+</body>
+</html>
