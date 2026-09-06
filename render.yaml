@@ -3,6 +3,7 @@ services:
     name: qx-ai-live-scanner-v4
     runtime: docker
     plan: free
+
     envVars:
       - key: BOT_PASSWORD
-        value: "12345678"
+        sync: false
