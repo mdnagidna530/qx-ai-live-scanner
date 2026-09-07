@@ -623,10 +623,10 @@ def entry_timing(candles, candidate, regime, total_score):
     close_pos = (cl - lo) / rng
 
     if candidate == "CALL":
-        favorable = close > op
+        favorable = cl > op
         location = close_pos
     elif candidate == "PUT":
-        favorable = close < op
+        favorable = cl > op
         location = 1 - close_pos
     else:
         return "NO TRADE", 0.0, None, "No directional candidate"
