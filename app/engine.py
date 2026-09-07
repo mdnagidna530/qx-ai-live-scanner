@@ -1,164 +1,132 @@
-
 import pandas as pd
 import numpy as np
 
-
 # ============================================================
-# QX AI LIVE SCANNER V4 - CORE ANALYSIS ENGINE
+# QX AI LIVE SCANNER - ADAPTIVE ENSEMBLE ENGINE
 # Signal only: CALL / PUT / NO TRADE
-# No automatic trade execution
+#
+# 5-second confirmation is NOT used as a mandatory gate.
+# The engine decides:
+#   1) direction: CALL / PUT / NO TRADE
+#   2) entry timing: CURRENT CANDLE / NEXT CANDLE / NO TRADE
+#
+# Confidence is a model score, NOT a guaranteed probability.
 # ============================================================
 
 MIN_CANDLES = 220
-
-# Higher = stricter signal filter
-SIGNAL_THRESHOLD = 9
-
-# Minimum agreement required from 1M / 5M / 15M
+SIGNAL_THRESHOLD = 9.0
+RANGE_THRESHOLD = 11.0
 MTF_REQUIRED = 2
-
-# Minimum 5-second directional agreement
-CONFIRM_RATIO = 0.67
+ENTRY_MIN = 2.5
 
 
 # ============================================================
-# BASIC INDICATORS
+# BASIC HELPERS
 # ============================================================
 
-def ema(series, period):
-    return series.ewm(span=period, adjust=False).mean()
+def safe(x, default=np.nan):
+    try:
+        x = float(x)
+        return x if np.isfinite(x) else default
+    except (TypeError, ValueError):
+        return default
 
 
-def rsi(series, period=14):
-    delta = series.diff()
-
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.ewm(
-        alpha=1 / period,
-        adjust=False
-    ).mean()
-
-    avg_loss = loss.ewm(
-        alpha=1 / period,
-        adjust=False
-    ).mean()
-
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-
-    return 100 - (100 / (1 + rs))
+def ema(s, p):
+    return s.ewm(span=p, adjust=False).mean()
 
 
-def atr(df, period=14):
+def sma(s, p):
+    return s.rolling(p).mean()
 
-    previous_close = df["close"].shift(1)
 
-    tr1 = df["high"] - df["low"]
-    tr2 = (df["high"] - previous_close).abs()
-    tr3 = (df["low"] - previous_close).abs()
+def rsi(s, p=14):
+    d = s.diff()
+    gain = d.clip(lower=0)
+    loss = -d.clip(upper=0)
 
-    true_range = pd.concat(
-        [tr1, tr2, tr3],
-        axis=1
+    ag = gain.ewm(alpha=1 / p, adjust=False).mean()
+    al = loss.ewm(alpha=1 / p, adjust=False).mean()
+
+    rs = ag / al.replace(0, np.nan)
+    out = 100 - (100 / (1 + rs))
+    return out.fillna(50)
+
+
+def atr(df, p=14):
+    pc = df["close"].shift(1)
+    tr = pd.concat(
+        [
+            df["high"] - df["low"],
+            (df["high"] - pc).abs(),
+            (df["low"] - pc).abs(),
+        ],
+        axis=1,
     ).max(axis=1)
 
-    return true_range.ewm(
-        alpha=1 / period,
-        adjust=False
-    ).mean()
+    return tr.ewm(alpha=1 / p, adjust=False).mean()
 
 
-def macd(series):
-
-    fast = ema(series, 12)
-    slow = ema(series, 26)
-
-    macd_line = fast - slow
-    signal_line = ema(macd_line, 9)
-
-    histogram = macd_line - signal_line
-
-    return macd_line, signal_line, histogram
+def macd(s):
+    fast = ema(s, 12)
+    slow = ema(s, 26)
+    line = fast - slow
+    signal = ema(line, 9)
+    hist = line - signal
+    return line, signal, hist
 
 
-def adx(df, period=14):
+def adx(df, p=14):
+    up = df["high"].diff()
+    down = -df["low"].diff()
 
-    up_move = df["high"].diff()
-    down_move = -df["low"].diff()
-
-    plus_dm = np.where(
-        (up_move > down_move) & (up_move > 0),
-        up_move,
-        0
+    plus_dm = pd.Series(
+        np.where((up > down) & (up > 0), up, 0.0),
+        index=df.index,
+    )
+    minus_dm = pd.Series(
+        np.where((down > up) & (down > 0), down, 0.0),
+        index=df.index,
     )
 
-    minus_dm = np.where(
-        (down_move > up_move) & (down_move > 0),
-        down_move,
-        0
-    )
-
-    atr_value = atr(df, period).replace(0, np.nan)
+    a = atr(df, p).replace(0, np.nan)
 
     plus_di = (
         100
-        * pd.Series(
-            plus_dm,
-            index=df.index
-        ).ewm(
-            alpha=1 / period,
-            adjust=False
-        ).mean()
-        / atr_value
+        * plus_dm.ewm(alpha=1 / p, adjust=False).mean()
+        / a
     )
-
     minus_di = (
         100
-        * pd.Series(
-            minus_dm,
-            index=df.index
-        ).ewm(
-            alpha=1 / period,
-            adjust=False
-        ).mean()
-        / atr_value
+        * minus_dm.ewm(alpha=1 / p, adjust=False).mean()
+        / a
     )
 
-    denominator = (
-        plus_di + minus_di
-    ).replace(0, np.nan)
+    den = (plus_di + minus_di).replace(0, np.nan)
+    dx = 100 * (plus_di - minus_di).abs() / den
+    value = dx.ewm(alpha=1 / p, adjust=False).mean()
 
-    dx = (
-        100
-        * (plus_di - minus_di).abs()
-        / denominator
-    )
-
-    return dx.ewm(
-        alpha=1 / period,
-        adjust=False
-    ).mean()
+    return value, plus_di, minus_di
 
 
-def stochastic(df, period=14):
+def stochastic(df, p=14):
+    lo = df["low"].rolling(p).min()
+    hi = df["high"].rolling(p).max()
+    den = (hi - lo).replace(0, np.nan)
 
-    lowest = df["low"].rolling(period).min()
-    highest = df["high"].rolling(period).max()
-
-    denominator = (
-        highest - lowest
-    ).replace(0, np.nan)
-
-    k = (
-        100
-        * (df["close"] - lowest)
-        / denominator
-    )
-
+    k = 100 * (df["close"] - lo) / den
     d = k.rolling(3).mean()
-
     return k, d
+
+
+def cci(df, p=20):
+    tp = (df["high"] + df["low"] + df["close"]) / 3
+    mean = tp.rolling(p).mean()
+    dev = tp.rolling(p).apply(
+        lambda x: np.mean(np.abs(x - np.mean(x))),
+        raw=True,
+    )
+    return (tp - mean) / (0.015 * dev.replace(0, np.nan))
 
 
 # ============================================================
@@ -166,376 +134,327 @@ def stochastic(df, period=14):
 # ============================================================
 
 def build_features(df):
+    d = df.copy()
 
-    data = df.copy()
+    for col in ["open", "high", "low", "close", "volume"]:
+        if col not in d.columns:
+            d[col] = 0.0
+        d[col] = pd.to_numeric(d[col], errors="coerce")
 
-    for period in [9, 21, 50, 200]:
-        data[f"ema{period}"] = ema(
-            data["close"],
-            period
-        )
+    d = d.replace([np.inf, -np.inf], np.nan)
 
-    data["rsi"] = rsi(
-        data["close"],
-        14
-    )
+    for p in [9, 21, 50, 100, 200]:
+        d[f"ema{p}"] = ema(d["close"], p)
 
-    data["atr"] = atr(
-        data,
-        14
-    )
+    d["sma20"] = sma(d["close"], 20)
+    d["sma50"] = sma(d["close"], 50)
+
+    d["rsi"] = rsi(d["close"], 14)
 
     (
-        data["macd"],
-        data["macd_signal"],
-        data["macd_hist"]
-    ) = macd(
-        data["close"]
+        d["macd"],
+        d["macd_signal"],
+        d["macd_hist"],
+    ) = macd(d["close"])
+
+    d["macd_hist_slope"] = d["macd_hist"].diff()
+
+    d["adx"], d["plus_di"], d["minus_di"] = adx(d, 14)
+
+    d["stoch_k"], d["stoch_d"] = stochastic(d, 14)
+
+    d["roc9"] = d["close"].pct_change(9) * 100
+    d["cci"] = cci(d, 20)
+    d["atr"] = atr(d, 14)
+
+    bb_mid = d["close"].rolling(20).mean()
+    bb_std = d["close"].rolling(20).std()
+
+    d["bb_mid"] = bb_mid
+    d["bb_upper"] = bb_mid + 2 * bb_std
+    d["bb_lower"] = bb_mid - 2 * bb_std
+    d["bb_width"] = (
+        (d["bb_upper"] - d["bb_lower"])
+        / d["close"].abs().clip(lower=1e-12)
     )
 
-    data["adx"] = adx(
-        data,
-        14
+    d["body"] = d["close"] - d["open"]
+    d["range"] = (d["high"] - d["low"]).clip(lower=1e-12)
+    d["body_abs"] = d["body"].abs()
+
+    d["upper_wick"] = (
+        d["high"] - d[["open", "close"]].max(axis=1)
+    )
+    d["lower_wick"] = (
+        d[["open", "close"]].min(axis=1) - d["low"]
     )
 
-    data["stoch_k"], data["stoch_d"] = stochastic(
-        data,
-        14
-    )
+    d["body_ratio"] = d["body_abs"] / d["range"]
+    d["upper_wick_ratio"] = d["upper_wick"] / d["range"]
+    d["lower_wick_ratio"] = d["lower_wick"] / d["range"]
 
-    # Bollinger Bands
+    d["range_vs_atr"] = d["range"] / d["atr"].replace(0, np.nan)
+    d["atr_pct"] = d["atr"] / d["close"].abs().clip(lower=1e-12) * 100
 
-    bb_mid = data["close"].rolling(20).mean()
-    bb_std = data["close"].rolling(20).std()
-
-    data["bb_mid"] = bb_mid
-    data["bb_upper"] = bb_mid + (2 * bb_std)
-    data["bb_lower"] = bb_mid - (2 * bb_std)
-
-    return data
+    return d
 
 
 # ============================================================
-# TREND / STRUCTURE
+# MARKET REGIME
 # ============================================================
 
-def trend_analysis(df):
-
+def detect_regime(df):
     last = df.iloc[-1]
 
-    score = 0
-    reasons = []
+    adx_v = safe(last["adx"])
+    width = safe(last["bb_width"])
+    e21 = safe(last["ema21"])
+    e50 = safe(last["ema50"])
+    a = safe(last["atr"])
 
-    # EMA structure
+    widths = df["bb_width"].dropna()
 
-    if (
-        last["ema9"]
-        > last["ema21"]
-        > last["ema50"]
-    ):
-
-        score += 3
-
-        reasons.append(
-            "EMA 9/21/50 structure is bullish"
-        )
-
-    elif (
-        last["ema9"]
-        < last["ema21"]
-        < last["ema50"]
-    ):
-
-        score -= 3
-
-        reasons.append(
-            "EMA 9/21/50 structure is bearish"
-        )
-
+    if len(widths) >= 60:
+        low_w = float(widths.tail(120).quantile(0.20))
+        high_w = float(widths.tail(120).quantile(0.80))
     else:
+        low_w = 0.0015
+        high_w = 0.015
 
-        reasons.append(
-            "EMA structure is mixed"
-        )
+    separation = 0
+    if np.isfinite(e21) and np.isfinite(e50) and np.isfinite(a) and a > 0:
+        separation = abs(e21 - e50) / a
 
-    # EMA 200
-
-    if last["close"] > last["ema200"]:
-
-        score += 1
-
-        reasons.append(
-            "Price is above EMA 200"
-        )
-
-    elif last["close"] < last["ema200"]:
-
-        score -= 1
-
-        reasons.append(
-            "Price is below EMA 200"
-        )
-
-    # ADX trend quality
-
-    if last["adx"] >= 25:
-
-        reasons.append(
-            "ADX shows usable trend strength"
-        )
-
-    elif last["adx"] < 20:
-
-        score = int(score * 0.65)
-
-        reasons.append(
-            "Weak/choppy trend penalty applied"
-        )
-
-    return score, reasons
-
-
-# ============================================================
-# MOMENTUM
-# ============================================================
-
-def momentum_analysis(df):
-
-    last = df.iloc[-1]
-
-    score = 0
-    reasons = []
-
-    # MACD
-
-    if last["macd_hist"] > 0:
-
-        score += 2
-
-        reasons.append(
-            "MACD momentum is bullish"
-        )
-
-    elif last["macd_hist"] < 0:
-
-        score -= 2
-
-        reasons.append(
-            "MACD momentum is bearish"
-        )
-
-    # RSI
-
-    if last["rsi"] >= 55:
-
-        score += 2
-
-        reasons.append(
-            "RSI supports bullish momentum"
-        )
-
-    elif last["rsi"] <= 45:
-
-        score -= 2
-
-        reasons.append(
-            "RSI supports bearish momentum"
-        )
-
-    else:
-
-        reasons.append(
-            "RSI is neutral"
-        )
-
-    # Stochastic
-
-    if (
-        last["stoch_k"]
-        > last["stoch_d"]
-        and last["stoch_k"] < 85
-    ):
-
-        score += 1
-
-        reasons.append(
-            "Stochastic momentum is bullish"
-        )
-
-    elif (
-        last["stoch_k"]
-        < last["stoch_d"]
-        and last["stoch_k"] > 15
-    ):
-
-        score -= 1
-
-        reasons.append(
-            "Stochastic momentum is bearish"
-        )
-
-    return score, reasons
-
-
-# ============================================================
-# RUNNING CANDLE / PRICE ACTION
-# ============================================================
-
-def running_candle_analysis(candles):
-
-    if not candles:
-
-        return 0, [
-            "Running candle unavailable"
+    if adx_v >= 25 and separation >= 0.20:
+        if width >= high_w:
+            return "TREND_HIGH_VOL", 2, [
+                "Strong trend with elevated volatility"
+            ]
+        return "TREND_LOW_VOL", 3, [
+            "Strong trend with controlled volatility"
         ]
 
-    current = candles[-1]
+    if adx_v < 20 and width <= low_w:
+        return "RANGE_LOW_VOL", -2, [
+            "Compressed range; breakout guessing avoided"
+        ]
 
-    open_price = float(
-        current["open"]
-    )
+    if adx_v < 20 and width >= high_w:
+        return "RANGE_HIGH_VOL", -3, [
+            "Wide unstable range; stricter filtering applied"
+        ]
 
-    high = float(
-        current["high"]
-    )
+    if adx_v >= 20:
+        return "DEVELOPING_TREND", 1, [
+            "Developing directional movement"
+        ]
 
-    low = float(
-        current["low"]
-    )
+    return "RANGE", -1, [
+        "Sideways/ranging market"
+    ]
 
-    close = float(
-        current["close"]
-    )
 
-    candle_range = max(
-        high - low,
-        1e-12
-    )
+# ============================================================
+# TREND EXPERT
+# ============================================================
 
-    body = abs(
-        close - open_price
-    )
+def trend_expert(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
 
-    upper_wick = (
-        high
-        - max(open_price, close)
-    )
-
-    lower_wick = (
-        min(open_price, close)
-        - low
-    )
-
-    body_ratio = (
-        body / candle_range
-    )
-
-    upper_ratio = (
-        upper_wick / candle_range
-    )
-
-    lower_ratio = (
-        lower_wick / candle_range
-    )
-
-    score = 0
+    score = 0.0
     reasons = []
 
-    # Strong bullish running candle
+    e9 = safe(last["ema9"])
+    e21 = safe(last["ema21"])
+    e50 = safe(last["ema50"])
+    e200 = safe(last["ema200"])
+    close = safe(last["close"])
 
-    if (
-        close > open_price
-        and body_ratio >= 0.55
-    ):
+    if e9 > e21 > e50:
+        score += 3
+        reasons.append("EMA 9/21/50 bullish alignment")
+    elif e9 < e21 < e50:
+        score -= 3
+        reasons.append("EMA 9/21/50 bearish alignment")
+    else:
+        reasons.append("EMA structure is mixed")
 
-        score += 2
+    if close > e200:
+        score += 1.5
+        reasons.append("Price above EMA200")
+    elif close < e200:
+        score -= 1.5
+        reasons.append("Price below EMA200")
 
-        reasons.append(
-            "Running candle has strong bullish body"
-        )
+    plus = safe(last["plus_di"])
+    minus = safe(last["minus_di"])
+    adx_v = safe(last["adx"])
 
-    # Strong bearish running candle
-
-    if (
-        close < open_price
-        and body_ratio >= 0.55
-    ):
-
-        score -= 2
-
-        reasons.append(
-            "Running candle has strong bearish body"
-        )
-
-    # Lower rejection
-
-    if (
-        lower_ratio >= 0.45
-        and body_ratio < 0.45
-    ):
-
+    if plus > minus:
         score += 1
-
-        reasons.append(
-            "Running candle shows lower-wick rejection"
-        )
-
-    # Upper rejection
-
-    if (
-        upper_ratio >= 0.45
-        and body_ratio < 0.45
-    ):
-
+    elif minus > plus:
         score -= 1
 
-        reasons.append(
-            "Running candle shows upper-wick rejection"
-        )
+    if adx_v >= 25:
+        score *= 1.15
+        reasons.append("ADX confirms usable trend strength")
+    elif adx_v < 18:
+        score *= 0.70
+        reasons.append("Low ADX reduces trend confidence")
 
-    # Previous candle comparison
+    prev_e21 = safe(prev["ema21"])
+    if e21 > prev_e21:
+        score += 0.5
+    elif e21 < prev_e21:
+        score -= 0.5
 
-    if len(candles) >= 2:
+    return score, reasons
 
-        previous = candles[-2]
 
-        po = float(
-            previous["open"]
-        )
+# ============================================================
+# MOMENTUM EXPERT
+# ============================================================
 
-        pc = float(
-            previous["close"]
-        )
+def momentum_expert(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
 
-        # Bullish engulfing
+    score = 0.0
+    reasons = []
 
-        if (
-            close > open_price
-            and pc < po
-            and close >= po
-            and open_price <= pc
-        ):
+    hist = safe(last["macd_hist"])
+    prev_hist = safe(prev["macd_hist"])
+    r = safe(last["rsi"])
+    k = safe(last["stoch_k"])
+    d = safe(last["stoch_d"])
+    roc_v = safe(last["roc9"])
+    cci_v = safe(last["cci"])
 
-            score += 2
+    if hist > 0:
+        score += 1.5
+        reasons.append("MACD momentum bullish")
+    elif hist < 0:
+        score -= 1.5
+        reasons.append("MACD momentum bearish")
 
-            reasons.append(
-                "Bullish engulfing structure detected"
-            )
+    if hist > prev_hist:
+        score += 0.75
+    elif hist < prev_hist:
+        score -= 0.75
 
-        # Bearish engulfing
+    # RSI is interpreted as momentum first, not as a blind
+    # overbought/oversold reversal trigger.
+    if 52 <= r <= 68:
+        score += 1.25
+        reasons.append("RSI supports healthy bullish momentum")
+    elif 32 <= r <= 48:
+        score -= 1.25
+        reasons.append("RSI supports bearish momentum")
+    elif r > 75:
+        score -= 0.75
+        reasons.append("RSI is extremely stretched upward")
+    elif r < 25:
+        score += 0.75
+        reasons.append("RSI is extremely stretched downward")
 
-        if (
-            close < open_price
-            and pc > po
-            and open_price >= pc
-            and close <= po
-        ):
+    if k > d:
+        score += 0.75
+    elif k < d:
+        score -= 0.75
 
-            score -= 2
+    if roc_v > 0:
+        score += 0.75
+    elif roc_v < 0:
+        score -= 0.75
 
-            reasons.append(
-                "Bearish engulfing structure detected"
-            )
+    if cci_v > 50:
+        score += 0.5
+    elif cci_v < -50:
+        score -= 0.5
+
+    return score, reasons
+
+
+# ============================================================
+# PRICE ACTION EXPERT
+# ============================================================
+
+def price_action_expert(df):
+    if len(df) < 4:
+        return 0.0, ["Price-action history insufficient"]
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    prev2 = df.iloc[-3]
+
+    score = 0.0
+    reasons = []
+
+    close = safe(last["close"])
+    op = safe(last["open"])
+    body_ratio = safe(last["body_ratio"])
+    upper = safe(last["upper_wick_ratio"])
+    lower = safe(last["lower_wick_ratio"])
+
+    pc = safe(prev["close"])
+    po = safe(prev["open"])
+
+    if close > op and body_ratio >= 0.60:
+        score += 2
+        reasons.append("Current candle has strong bullish body")
+    elif close < op and body_ratio >= 0.60:
+        score -= 2
+        reasons.append("Current candle has strong bearish body")
+
+    if lower >= 0.45 and body_ratio < 0.50:
+        score += 1.25
+        reasons.append("Lower-wick rejection favors buyers")
+
+    if upper >= 0.45 and body_ratio < 0.50:
+        score -= 1.25
+        reasons.append("Upper-wick rejection favors sellers")
+
+    if (
+        close > op
+        and pc < po
+        and close >= po
+        and op <= pc
+    ):
+        score += 2
+        reasons.append("Bullish engulfing pattern")
+
+    if (
+        close < op
+        and pc > po
+        and op >= pc
+        and close <= po
+    ):
+        score -= 2
+        reasons.append("Bearish engulfing pattern")
+
+    p2c = safe(prev2["close"])
+    p2o = safe(prev2["open"])
+
+    if close > op and pc > po and p2c > p2o:
+        score += 1
+        reasons.append("Three-bar bullish continuation")
+
+    if close < op and pc < po and p2c < p2o:
+        score -= 1
+        reasons.append("Three-bar bearish continuation")
+
+    prior_high = safe(df["high"].iloc[-21:-1].max())
+    prior_low = safe(df["low"].iloc[-21:-1].min())
+    high = safe(last["high"])
+    low = safe(last["low"])
+
+    if high > prior_high and close > prior_high:
+        score += 2
+        reasons.append("Bullish Donchian breakout")
+    elif low < prior_low and close < prior_low:
+        score -= 2
+        reasons.append("Bearish Donchian breakdown")
 
     return score, reasons
 
@@ -544,693 +463,501 @@ def running_candle_analysis(candles):
 # SUPPORT / RESISTANCE
 # ============================================================
 
-def support_resistance_analysis(df):
-
+def structure_expert(df):
     if len(df) < 80:
-
-        return 0, [
-            "Support/resistance history insufficient"
-        ]
+        return 0.0, ["Support/resistance history insufficient"]
 
     last = df.iloc[-1]
 
-    lookback = df.iloc[-80:-1]
+    close = safe(last["close"])
+    a = safe(last["atr"])
 
-    resistance = lookback["high"].max()
-    support = lookback["low"].min()
+    if not np.isfinite(close) or not np.isfinite(a) or a <= 0:
+        return 0.0, ["Structure data unavailable"]
 
-    current_price = float(
-        last["close"]
-    )
+    look = df.iloc[-80:-1]
+    resistance = float(look["high"].max())
+    support = float(look["low"].min())
 
-    current_atr = float(
-        last["atr"]
-    )
-
-    if current_atr <= 0:
-
-        return 0, [
-            "ATR unavailable for support/resistance"
-        ]
-
-    score = 0
+    score = 0.0
     reasons = []
 
-    distance_resistance = abs(
-        resistance - current_price
-    )
+    dist_r = resistance - close
+    dist_s = close - support
 
-    distance_support = abs(
-        current_price - support
-    )
-
-    # Too close to resistance
-
-    if distance_resistance < (
-        0.35 * current_atr
-    ):
-
-        score -= 2
-
-        reasons.append(
-            "Price is too close to resistance"
-        )
-
-    # Too close to support
-
-    elif distance_support < (
-        0.35 * current_atr
-    ):
-
-        score += 2
-
-        reasons.append(
-            "Price is reacting near support"
-        )
-
-    else:
-
-        reasons.append(
-            "No immediate S/R conflict"
-        )
-
-    return score, reasons
-
-
-# ============================================================
-# VOLATILITY
-# ============================================================
-
-def volatility_analysis(df):
-
-    last = df.iloc[-1]
-
-    if (
-        pd.isna(last["atr"])
-        or last["atr"] <= 0
-    ):
-
-        return 0, [
-            "Volatility data unavailable"
-        ]
-
-    bb_width = (
-        last["bb_upper"]
-        - last["bb_lower"]
-    ) / max(
-        abs(last["close"]),
-        1e-12
-    )
-
-    score = 0
-    reasons = []
-
-    # Extremely compressed market
-
-    if bb_width < 0.0015:
-
-        score -= 2
-
-        reasons.append(
-            "Very low volatility — breakout guessing avoided"
-        )
-
-    # Excessive volatility
-
-    elif bb_width > 0.015:
-
-        score -= 1
-
-        reasons.append(
-            "High volatility — stricter filtering applied"
-        )
-
-    else:
-
+    if 0 <= dist_r <= 0.40 * a:
+        score -= 1.75
+        reasons.append("Price is close to resistance")
+    elif dist_r < 0:
         score += 1
+        reasons.append("Price is above recent resistance")
 
-        reasons.append(
-            "Volatility is within acceptable range"
-        )
+    if 0 <= dist_s <= 0.40 * a:
+        score += 1.75
+        reasons.append("Price is close to support")
+    elif dist_s < 0:
+        score -= 1
+        reasons.append("Price is below recent support")
+
+    upper = safe(last["bb_upper"])
+    lower = safe(last["bb_lower"])
+
+    if close > upper:
+        score -= 0.75
+        reasons.append("Price extended above Bollinger upper band")
+    elif close < lower:
+        score += 0.75
+        reasons.append("Price extended below Bollinger lower band")
 
     return score, reasons
 
 
 # ============================================================
-# TRUE 5-SECOND CONFIRMATION
+# VOLATILITY EXPERT
 # ============================================================
 
-def five_second_confirmation(
-    ticks,
-    direction
-):
+def volatility_expert(df):
+    last = df.iloc[-1]
 
-    # We need real short-term observations.
+    width = safe(last["bb_width"])
+    range_vs_atr = safe(last["range_vs_atr"])
 
-    if (
-    ticks is None
-    or len(ticks) < 3
-):
+    widths = df["bb_width"].dropna()
 
-        return (
-            False,
-            0.0,
-            "REAL 5-second confirmation unavailable"
-        )
-
-    prices = np.array(
-        [
-            float(x["price"])
-            for x in ticks[-7:]
-        ]
-    )
-
-    changes = np.diff(
-        prices
-    )
-
-    if direction == "CALL":
-
-        agreeing_moves = (
-            changes > 0
-        ).sum()
-
+    if len(widths) >= 60:
+        low_w = float(widths.tail(120).quantile(0.20))
+        high_w = float(widths.tail(120).quantile(0.80))
     else:
+        low_w = 0.0015
+        high_w = 0.015
 
-        agreeing_moves = (
-            changes < 0
-        ).sum()
+    if width <= low_w:
+        regime = "LOW"
+        score = -1.5
+        reason = "Volatility compressed"
+    elif width >= high_w:
+        regime = "HIGH"
+        score = -1
+        reason = "Volatility elevated"
+    else:
+        regime = "NORMAL"
+        score = 1
+        reason = "Volatility within normal range"
 
-    ratio = (
-        agreeing_moves
-        / max(len(changes), 1)
-    )
+    if range_vs_atr >= 2:
+        score -= 1
+        reason += "; current candle is unusually large"
 
-    net_move = (
-        prices[-1]
-        - prices[0]
-    )
-
-    directional_move = (
-        net_move > 0
-        if direction == "CALL"
-        else net_move < 0
-    )
-
-    confirmed = (
-        ratio >= CONFIRM_RATIO
-        and directional_move
-    )
-
-    if confirmed:
-
-        return (
-            True,
-            ratio,
-            f"5-second movement confirms {direction}"
-        )
-
-    return (
-        False,
-        ratio,
-        "5-second movement conflicts with candidate direction"
-    )
+    return score, regime, [reason]
 
 
 # ============================================================
-# MULTI-TIMEFRAME ALIGNMENT
+# DIVERGENCE / EXHAUSTION
 # ============================================================
 
-def timeframe_alignment(
-    score_1m,
-    score_5m,
-    score_15m,
-    candidate
-):
+def divergence_expert(df):
+    if len(df) < 35:
+        return 0.0, []
 
-    scores = [
-        score_1m,
-        score_5m,
-        score_15m
-    ]
+    close_now = safe(df["close"].iloc[-1])
+    close_old = safe(df["close"].iloc[-12])
+    r_now = safe(df["rsi"].iloc[-1])
+    r_old = safe(df["rsi"].iloc[-12])
+
+    score = 0.0
+    reasons = []
+
+    if close_now > close_old and r_now < r_old - 3:
+        score -= 1.25
+        reasons.append("Bearish RSI divergence risk")
+
+    elif close_now < close_old and r_now > r_old + 3:
+        score += 1.25
+        reasons.append("Bullish RSI divergence risk")
+
+    return score, reasons
+
+
+# ============================================================
+# MULTI-TIMEFRAME
+# ============================================================
+
+def timeframe_score(df):
+    t, tr = trend_expert(df)
+    m, mr = momentum_expert(df)
+    return t + m, tr + mr
+
+
+def mtf_alignment(scores, candidate):
+    if candidate == "CALL":
+        n = sum(x > 0 for x in scores)
+    elif candidate == "PUT":
+        n = sum(x < 0 for x in scores)
+    else:
+        n = 0
+
+    return n >= MTF_REQUIRED, n
+
+
+# ============================================================
+# CURRENT CANDLE VS NEXT CANDLE
+# ============================================================
+
+def entry_timing(candles, candidate, regime, total_score):
+    if not candles:
+        return "NO TRADE", 0.0, None, "Current candle unavailable"
+
+    c = candles[-1]
+
+    op = safe(c.get("open"))
+    hi = safe(c.get("high"))
+    lo = safe(c.get("low"))
+    cl = safe(c.get("close"))
+    ts = safe(c.get("timestamp"))
+
+    if not all(np.isfinite(x) for x in [op, hi, lo, cl]):
+        return "NO TRADE", 0.0, None, "Current candle invalid"
+
+    rng = max(hi - lo, 1e-12)
+    body_ratio = abs(cl - op) / rng
+    close_pos = (cl - lo) / rng
 
     if candidate == "CALL":
-
-        agreement = sum(
-            s > 0
-            for s in scores
-        )
-
+        favorable = close > op
+        location = close_pos
     elif candidate == "PUT":
-
-        agreement = sum(
-            s < 0
-            for s in scores
-        )
-
+        favorable = close < op
+        location = 1 - close_pos
     else:
+        return "NO TRADE", 0.0, None, "No directional candidate"
 
-        agreement = 0
+    q = 0.0
+    reasons = []
+
+    if favorable and body_ratio >= 0.55:
+        q += 3
+        reasons.append("Current candle body supports direction")
+    elif body_ratio < 0.25:
+        q -= 2
+        reasons.append("Current candle is indecisive")
+
+    if location >= 0.70:
+        q += 2
+        reasons.append("Candle closes near favorable side")
+    elif location <= 0.35:
+        q -= 2
+        reasons.append("Candle closes against candidate")
+
+    if body_ratio >= 0.75:
+        q -= 1.5
+        reasons.append("Current candle is already extended")
+
+    if regime in {"RANGE", "RANGE_LOW_VOL", "RANGE_HIGH_VOL"}:
+        q -= 1
+        reasons.append("Range regime favors waiting")
+
+    if abs(total_score) >= 14:
+        q += 1
+
+    if q >= ENTRY_MIN:
+        entry = "CURRENT CANDLE"
+    elif q >= 2.5:
+        entry = "NEXT CANDLE"
+    else:
+        entry = "NO TRADE"
+
+    progress = None
+    if np.isfinite(ts):
+        try:
+            now = pd.Timestamp.now(tz="UTC").timestamp()
+            # BiQuote timestamps are expected to be epoch seconds.
+            elapsed = max(0.0, now - ts)
+            progress = min(1.0, elapsed / 60.0)
+        except Exception:
+            progress = None
 
     return (
-        agreement >= MTF_REQUIRED,
-        agreement
+        entry,
+        round(q, 2),
+        round(progress, 2) if progress is not None else None,
+        "; ".join(reasons),
     )
 
 
 # ============================================================
-# MAIN ANALYSIS FUNCTION
+# CONFIDENCE
+# ============================================================
+
+def confidence_score(total, agreement, regime, entry_q, decision):
+    base = 50 + min(abs(total), 24) * 1.65
+
+    if agreement == 3:
+        base += 8
+    elif agreement == 2:
+        base += 2
+    else:
+        base -= 8
+
+    if regime in {"TREND_LOW_VOL", "DEVELOPING_TREND"}:
+        base += 3
+    elif regime in {"RANGE_HIGH_VOL", "RANGE_LOW_VOL"}:
+        base -= 6
+
+    base += max(-4, min(6, entry_q))
+
+    out = int(max(1, min(95, base)))
+
+    if decision == "NO TRADE":
+        out = min(out, 59)
+
+    return out
+
+
+# ============================================================
+# MAIN ANALYSIS
 # ============================================================
 
 def analyze(
     candles_1m,
     candles_5m,
     candles_15m,
-    ticks_5s
+    ticks_5s=None,
 ):
-
-    # --------------------------------------------------------
-    # DATA VALIDATION
-    # --------------------------------------------------------
+    # ticks_5s is intentionally accepted for API compatibility.
+    # It is NOT used as a mandatory confirmation gate.
 
     if not candles_1m:
-
         return {
             "decision": "NO TRADE",
+            "signal": "NO TRADE",
             "status": "DATA_NOT_CONNECTED",
             "score": 0,
             "confidence": 0,
-            "reasons": [
-                "1-minute live data unavailable"
-            ]
+            "entry_timing": "NO TRADE",
+            "entry_quality": 0,
+            "confirmation_mode": "5S_DISABLED",
+            "reasons": ["1-minute live data unavailable"],
         }
 
     if len(candles_1m) < MIN_CANDLES:
-
         return {
             "decision": "NO TRADE",
+            "signal": "NO TRADE",
             "status": "INSUFFICIENT_DATA",
             "score": 0,
             "confidence": 0,
+            "entry_timing": "NO TRADE",
+            "entry_quality": 0,
+            "confirmation_mode": "5S_DISABLED",
             "reasons": [
-                f"Need at least {MIN_CANDLES} completed 1-minute candles"
-            ]
+                f"Need at least {MIN_CANDLES} 1-minute candles"
+            ],
         }
 
-    # --------------------------------------------------------
-    # DATAFRAME
-    # --------------------------------------------------------
-
     try:
+        f1 = build_features(pd.DataFrame(candles_1m))
+        f5 = build_features(pd.DataFrame(candles_5m or []))
+        f15 = build_features(pd.DataFrame(candles_15m or []))
 
-        df1 = pd.DataFrame(
-            candles_1m
-        )
+        f1 = f1.dropna().reset_index(drop=True)
+        f5 = f5.dropna().reset_index(drop=True)
+        f15 = f15.dropna().reset_index(drop=True)
 
-        df5 = pd.DataFrame(
-            candles_5m
-        )
-
-        df15 = pd.DataFrame(
-            candles_15m
-        )
-
-    except Exception:
-
+    except Exception as exc:
         return {
             "decision": "NO TRADE",
-            "status": "DATA_ERROR",
-            "score": 0,
-            "confidence": 0,
-            "reasons": [
-                "Market data could not be parsed"
-            ]
-        }
-
-    # --------------------------------------------------------
-    # FEATURE GENERATION
-    # --------------------------------------------------------
-
-    try:
-
-        f1 = build_features(
-            df1
-        ).dropna().reset_index(
-            drop=True
-        )
-
-        f5 = build_features(
-            df5
-        ).dropna().reset_index(
-            drop=True
-        )
-
-        f15 = build_features(
-            df15
-        ).dropna().reset_index(
-            drop=True
-        )
-
-    except Exception:
-
-        return {
-            "decision": "NO TRADE",
+            "signal": "NO TRADE",
             "status": "INDICATOR_ERROR",
             "score": 0,
             "confidence": 0,
+            "entry_timing": "NO TRADE",
+            "entry_quality": 0,
+            "confirmation_mode": "5S_DISABLED",
             "reasons": [
-                "Indicator calculation failed"
-            ]
+                "Indicator calculation failed",
+                str(exc),
+            ],
         }
 
-    if (
-        len(f1) < 40
-        or len(f5) < 40
-        or len(f15) < 40
-    ):
-
+    if len(f1) < 40 or len(f5) < 40 or len(f15) < 40:
         return {
             "decision": "NO TRADE",
+            "signal": "NO TRADE",
             "status": "INDICATORS_NOT_READY",
             "score": 0,
             "confidence": 0,
+            "entry_timing": "NO TRADE",
+            "entry_quality": 0,
+            "confirmation_mode": "5S_DISABLED",
             "reasons": [
                 "Multi-timeframe indicators are not warmed up"
-            ]
+            ],
         }
 
-    # --------------------------------------------------------
-    # INDIVIDUAL TIMEFRAME ANALYSIS
-    # --------------------------------------------------------
+    # Market regime
+    regime, regime_score, regime_reasons = detect_regime(f1)
 
-    score_1m, why_1m = trend_analysis(
-        f1
+    # 1m / 5m / 15m experts
+    s1, r1 = timeframe_score(f1)
+    s5, r5 = timeframe_score(f5)
+    s15, r15 = timeframe_score(f15)
+
+    # Higher timeframes receive slightly more weight.
+    mtf_score = (
+        0.30 * s1
+        + 0.35 * s5
+        + 0.35 * s15
     )
 
-    momentum_1m, momentum_why = momentum_analysis(
-        f1
-    )
+    # 1m entry experts
+    pa, pa_reasons = price_action_expert(f1)
+    sr, sr_reasons = structure_expert(f1)
+    vol, vol_regime, vol_reasons = volatility_expert(f1)
+    div, div_reasons = divergence_expert(f1)
 
-    score_1m += momentum_1m
-
-    score_5m, why_5m = trend_analysis(
-        f5
-    )
-
-    score_5m += momentum_analysis(
-        f5
-    )[0]
-
-    score_15m, why_15m = trend_analysis(
-        f15
-    )
-
-    score_15m += momentum_analysis(
-        f15
-    )[0]
-
-    # --------------------------------------------------------
-    # RUNNING CANDLE
-    # --------------------------------------------------------
-
-    running_score, running_why = (
-        running_candle_analysis(
-            candles_1m
-        )
-    )
-
-    # --------------------------------------------------------
-    # SUPPORT / RESISTANCE
-    # --------------------------------------------------------
-
-    sr_score, sr_why = (
-        support_resistance_analysis(
-            f1
-        )
-    )
-
-    # --------------------------------------------------------
-    # VOLATILITY
-    # --------------------------------------------------------
-
-    volatility_score, volatility_why = (
-        volatility_analysis(
-            f1
-        )
-    )
-
-    # --------------------------------------------------------
-    # FINAL RAW SCORE
-    # --------------------------------------------------------
-
-    total_score = (
-        score_1m
-        + score_5m
-        + score_15m
-        + running_score
-        + sr_score
-        + volatility_score
-    )
-
-    reasons = []
-
-    reasons.extend(
-        why_1m
-    )
-
-    reasons.extend(
-        momentum_why
-    )
-
-    reasons.extend(
-        why_5m
-    )
-
-    reasons.extend(
-        why_15m
-    )
-
-    reasons.extend(
-        running_why
-    )
-
-    reasons.extend(
-        sr_why
-    )
-
-    reasons.extend(
-        volatility_why
-    )
-
-    # --------------------------------------------------------
-    # CANDIDATE DIRECTION
-    # --------------------------------------------------------
-
-    if total_score > 0:
-
-        candidate = "CALL"
-
-    elif total_score < 0:
-
-        candidate = "PUT"
-
+    if regime in {"TREND_LOW_VOL", "DEVELOPING_TREND"}:
+        mtf_weight = 1.00
+        pa_weight = 1.00
+    elif regime == "TREND_HIGH_VOL":
+        mtf_weight = 0.95
+        pa_weight = 1.10
+    elif regime in {"RANGE", "RANGE_LOW_VOL"}:
+        mtf_weight = 0.85
+        pa_weight = 0.85
     else:
+        mtf_weight = 0.70
+        pa_weight = 0.70
 
+    total = (
+        mtf_weight * mtf_score
+        + pa_weight * pa
+        + sr
+        + vol
+        + div
+        + 0.75 * regime_score
+    )
+
+    if total > 0:
+        candidate = "CALL"
+    elif total < 0:
+        candidate = "PUT"
+    else:
         candidate = "NO TRADE"
 
-    # --------------------------------------------------------
-    # MULTI-TIMEFRAME CONFIRMATION
-    # --------------------------------------------------------
-
-    aligned, agreement = (
-        timeframe_alignment(
-            score_1m,
-            score_5m,
-            score_15m,
-            candidate
-        )
+    aligned, agreement = mtf_alignment(
+        [s1, s5, s15],
+        candidate,
     )
 
-    reasons.append(
-        f"MTF agreement: {agreement}/3"
+    # Decide whether the current candle is usable or the next one
+    # is the cleaner entry.
+    entry, entry_q, progress, entry_reason = entry_timing(
+        candles_1m,
+        candidate,
+        regime,
+        total,
     )
 
-    # --------------------------------------------------------
-    # 5 SECOND CONFIRMATION
-    # --------------------------------------------------------
-
-    if candidate != "NO TRADE":
-
-        confirmed, confirm_ratio, confirm_reason = (
-            five_second_confirmation(
-                ticks_5s,
-                candidate
-            )
-        )
-
-    else:
-
-        confirmed = False
-        confirm_ratio = 0.0
-        confirm_reason = (
-            "No directional candidate"
-        )
-
-    reasons.append(
-        confirm_reason
+    threshold = (
+        RANGE_THRESHOLD
+        if regime in {"RANGE", "RANGE_LOW_VOL", "RANGE_HIGH_VOL"}
+        else SIGNAL_THRESHOLD
     )
 
-    # --------------------------------------------------------
-    # FINAL FILTER
-    # --------------------------------------------------------
+    decision = "NO TRADE"
+    status = "FILTERED"
 
     if (
         candidate != "NO TRADE"
-        and abs(total_score) >= SIGNAL_THRESHOLD
+        and abs(total) >= threshold
         and aligned
-        and confirmed
+        and entry in {"CURRENT CANDLE", "NEXT CANDLE"}
+        and entry_q >= ENTRY_MIN
     ):
-
         decision = candidate
         status = "SIGNAL"
 
-    else:
+    reasons = []
+    reasons.extend(regime_reasons)
+    reasons.extend(r1)
+    reasons.extend(r5)
+    reasons.extend(r15)
+    reasons.extend(pa_reasons)
+    reasons.extend(sr_reasons)
+    reasons.extend(vol_reasons)
+    reasons.extend(div_reasons)
 
-        decision = "NO TRADE"
-        status = "FILTERED"
+    reasons.append(f"MTF agreement: {agreement}/3")
+    reasons.append(f"Entry timing: {entry}")
 
-    # --------------------------------------------------------
-    # CONFIDENCE
-    # --------------------------------------------------------
+    if entry_reason:
+        reasons.append(entry_reason)
 
-    confidence = int(
-        50
-        + abs(total_score) * 3
-        + max(
-            0,
-            confirm_ratio - 0.67
-        ) * 35
-    )
+    if not aligned:
+        reasons.append("MTF direction is not sufficiently aligned")
 
-    confidence = min(
-        confidence,
-        97
-    )
-
-    if decision == "NO TRADE":
-
-        confidence = min(
-            confidence,
-            59
+    if abs(total) < threshold:
+        reasons.append(
+            f"Score {total:.1f} is below required {threshold:.1f}"
         )
 
-    # --------------------------------------------------------
-    # INDICATOR SNAPSHOT
-    # --------------------------------------------------------
+    confidence = confidence_score(
+        total,
+        agreement,
+        regime,
+        entry_q,
+        decision,
+    )
 
     last = f1.iloc[-1]
 
     indicators = {
-
-        "ema9": round(
-            float(last["ema9"]),
-            8
-        ),
-
-        "ema21": round(
-            float(last["ema21"]),
-            8
-        ),
-
-        "ema50": round(
-            float(last["ema50"]),
-            8
-        ),
-
-        "ema200": round(
-            float(last["ema200"]),
-            8
-        ),
-
-        "rsi": round(
-            float(last["rsi"]),
-            2
-        ),
-
-        "adx": round(
-            float(last["adx"]),
-            2
-        ),
-
-        "atr": round(
-            float(last["atr"]),
-            8
-        ),
-
-        "macd_hist": round(
-            float(last["macd_hist"]),
-            8
-        ),
-
-        "stoch_k": round(
-            float(last["stoch_k"]),
-            2
-        ),
-
-        "bb_width": round(
-            float(
-                (
-                    last["bb_upper"]
-                    - last["bb_lower"]
-                )
-                / max(
-                    abs(last["close"]),
-                    1e-12
-                )
-            ),
-            6
-        )
+        "ema9": round(safe(last["ema9"]), 8),
+        "ema21": round(safe(last["ema21"]), 8),
+        "ema50": round(safe(last["ema50"]), 8),
+        "ema200": round(safe(last["ema200"]), 8),
+        "rsi": round(safe(last["rsi"]), 2),
+        "adx": round(safe(last["adx"]), 2),
+        "atr": round(safe(last["atr"]), 8),
+        "macd_hist": round(safe(last["macd_hist"]), 8),
+        "macd_hist_slope": round(safe(last["macd_hist_slope"]), 8),
+        "stoch_k": round(safe(last["stoch_k"]), 2),
+        "stoch_d": round(safe(last["stoch_d"]), 2),
+        "roc9": round(safe(last["roc9"]), 4),
+        "cci": round(safe(last["cci"]), 2),
+        "bb_width": round(safe(last["bb_width"]), 6),
+        "atr_pct": round(safe(last["atr_pct"]), 4),
     }
 
-    # --------------------------------------------------------
-    # RESULT
-    # --------------------------------------------------------
-
     return {
-
         "decision": decision,
-
+        "signal": decision,
         "status": status,
 
-        "score": int(
-            total_score
-        ),
+        "score": int(round(total)),
+        "raw_score": round(float(total), 2),
+        "confidence": confidence,
 
-        "confidence": int(
-            confidence
-        ),
+        "entry_timing": entry,
+        "entry_quality": entry_q,
+        "candle_progress": progress,
+
+        "market_regime": regime,
+        "volatility_regime": vol_regime,
 
         "timeframe_scores": {
-
-            "1m": int(
-                score_1m
-            ),
-
-            "5m": int(
-                score_5m
-            ),
-
-            "15m": int(
-                score_15m
-            )
+            "1m": int(round(s1)),
+            "5m": int(round(s5)),
+            "15m": int(round(s15)),
         },
 
-        "confirmation_ratio": round(
-            float(confirm_ratio),
-            2
-        ),
+        "mtf_agreement": int(agreement),
+
+        # Kept only for compatibility with the old frontend.
+        # It is deliberately not a signal gate.
+        "confirmation_ratio": None,
+        "confirmation_mode": "5S_DISABLED",
 
         "indicators": indicators,
-
-        "reasons": reasons
+        "reasons": reasons,
     }
