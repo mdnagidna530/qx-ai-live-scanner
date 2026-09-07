@@ -688,9 +688,9 @@ def five_second_confirmation(
     # We need real short-term observations.
 
     if (
-        ticks is None
-        or len(ticks) < 7
-    ):
+    ticks is None
+    or len(ticks) < 3
+):
 
         return (
             False,
