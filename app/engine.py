@@ -1,41 +1,35 @@
-
 import pandas as pd
 import numpy as np
 
 # ============================================================
-# QX AI LIVE SCANNER V6 - ADAPTIVE EVIDENCE ENGINE
+# QX AI LIVE SCANNER V7 - ADAPTIVE MULTI-FACTOR ENGINE
 #
 # Signal only: CALL / PUT / NO TRADE
 #
-# Design:
-#   - Uses REAL supplied candles only.
-#   - No fabricated ticks/candles.
-#   - No mandatory 5-second gate.
-#   - Direction is selected by the stronger side of the
-#     multi-factor evidence.
-#   - Direction percentages are RELATIVE MODEL EVIDENCE,
-#     NOT calibrated win probabilities.
-#   - NO TRADE is reserved for missing/invalid data.
-#
 # IMPORTANT:
-#   This is a decision-support model, not a guarantee of outcome.
+# - Uses only supplied market data.
+# - No fabricated ticks/candles.
+# - No automatic trade execution.
+# - No mandatory 5-second gate.
+# - CALL/PUT percentages are RELATIVE MODEL EVIDENCE,
+#   NOT calibrated win probabilities.
+# - Round-number reactions are evidence, not a guaranteed
+#   reversal rule.
 # ============================================================
 
 MIN_CANDLES = 220
 MIN_TF_CANDLES = 80
-
-# Expert weights. They sum to 1.0.
-WEIGHTS = {
-    "trend": 0.24,
-    "momentum": 0.20,
-    "price_action": 0.18,
-    "structure": 0.14,
-    "volatility": 0.08,
-    "mtf": 0.16,
-}
-
 EPS = 1e-12
 
+BASE_WEIGHTS = {
+    "trend": 0.20,
+    "momentum": 0.18,
+    "price_action": 0.17,
+    "structure": 0.13,
+    "volatility": 0.07,
+    "mtf": 0.15,
+    "round_level": 0.10,
+}
 
 # ============================================================
 # BASIC HELPERS
@@ -64,27 +58,23 @@ def rsi(s, p=14):
     ag = gain.ewm(alpha=1 / p, adjust=False).mean()
     al = loss.ewm(alpha=1 / p, adjust=False).mean()
     rs = ag / al.replace(0, np.nan)
-    out = 100 - (100 / (1 + rs))
-    return out.fillna(50)
+    return (100 - (100 / (1 + rs))).fillna(50)
 
 
 def atr(df, p=14):
     pc = df["close"].shift(1)
-    tr = pd.concat(
-        [
-            df["high"] - df["low"],
-            (df["high"] - pc).abs(),
-            (df["low"] - pc).abs(),
-        ],
-        axis=1,
-    ).max(axis=1)
+    tr = pd.concat([
+        df["high"] - df["low"],
+        (df["high"] - pc).abs(),
+        (df["low"] - pc).abs(),
+    ], axis=1).max(axis=1)
     return tr.ewm(alpha=1 / p, adjust=False).mean()
 
 
 def macd(s):
-    f = ema(s, 12)
-    sl = ema(s, 26)
-    line = f - sl
+    fast = ema(s, 12)
+    slow = ema(s, 26)
+    line = fast - slow
     signal = ema(line, 9)
     return line, signal, line - signal
 
@@ -94,10 +84,12 @@ def adx(df, p=14):
     down = -df["low"].diff()
 
     plus_dm = pd.Series(
-        np.where((up > down) & (up > 0), up, 0.0), index=df.index
+        np.where((up > down) & (up > 0), up, 0.0),
+        index=df.index,
     )
     minus_dm = pd.Series(
-        np.where((down > up) & (down > 0), down, 0.0), index=df.index
+        np.where((down > up) & (down > 0), down, 0.0),
+        index=df.index,
     )
 
     a = atr(df, p).replace(0, np.nan)
@@ -106,8 +98,7 @@ def adx(df, p=14):
 
     den = (plus_di + minus_di).replace(0, np.nan)
     dx = 100 * (plus_di - minus_di).abs() / den
-    value = dx.ewm(alpha=1 / p, adjust=False).mean()
-    return value, plus_di, minus_di
+    return dx.ewm(alpha=1 / p, adjust=False).mean(), plus_di, minus_di
 
 
 def stochastic(df, p=14):
@@ -115,8 +106,7 @@ def stochastic(df, p=14):
     hi = df["high"].rolling(p).max()
     den = (hi - lo).replace(0, np.nan)
     k = 100 * (df["close"] - lo) / den
-    d = k.rolling(3).mean()
-    return k, d
+    return k, k.rolling(3).mean()
 
 
 def cci(df, p=20):
@@ -135,7 +125,6 @@ def williams_r(df, p=14):
 
 
 def supertrend(df, p=10, multiplier=3.0):
-    # Lightweight, deterministic Supertrend implementation.
     a = atr(df, p)
     hl2 = (df["high"] + df["low"]) / 2
     upper = hl2 + multiplier * a
@@ -157,9 +146,13 @@ def supertrend(df, p=10, multiplier=3.0):
             final_lower.iloc[i] = lower.iloc[i]
 
         if direction.iloc[i - 1] > 0:
-            direction.iloc[i] = -1 if df["close"].iloc[i] < final_lower.iloc[i] else 1
+            direction.iloc[i] = (
+                -1 if df["close"].iloc[i] < final_lower.iloc[i] else 1
+            )
         else:
-            direction.iloc[i] = 1 if df["close"].iloc[i] > final_upper.iloc[i] else -1
+            direction.iloc[i] = (
+                1 if df["close"].iloc[i] > final_upper.iloc[i] else -1
+            )
 
     return direction, final_upper, final_lower
 
@@ -184,23 +177,25 @@ def build_features(df):
 
     d["sma20"] = sma(d["close"], 20)
     d["sma50"] = sma(d["close"], 50)
-    d["rsi"] = rsi(d["close"], 14)
+    d["rsi"] = rsi(d["close"])
     d["macd"], d["macd_signal"], d["macd_hist"] = macd(d["close"])
     d["macd_hist_slope"] = d["macd_hist"].diff()
-
-    d["adx"], d["plus_di"], d["minus_di"] = adx(d, 14)
-    d["stoch_k"], d["stoch_d"] = stochastic(d, 14)
-    d["williams_r"] = williams_r(d, 14)
+    d["adx"], d["plus_di"], d["minus_di"] = adx(d)
+    d["stoch_k"], d["stoch_d"] = stochastic(d)
+    d["williams_r"] = williams_r(d)
     d["roc9"] = d["close"].pct_change(9) * 100
-    d["cci"] = cci(d, 20)
-    d["atr"] = atr(d, 14)
+    d["cci"] = cci(d)
+    d["atr"] = atr(d)
 
     bb_mid = d["close"].rolling(20).mean()
     bb_std = d["close"].rolling(20).std()
     d["bb_mid"] = bb_mid
     d["bb_upper"] = bb_mid + 2 * bb_std
     d["bb_lower"] = bb_mid - 2 * bb_std
-    d["bb_width"] = (d["bb_upper"] - d["bb_lower"]) / d["close"].abs().clip(lower=EPS)
+    d["bb_width"] = (
+        (d["bb_upper"] - d["bb_lower"])
+        / d["close"].abs().clip(lower=EPS)
+    )
 
     d["body"] = d["close"] - d["open"]
     d["range"] = (d["high"] - d["low"]).clip(lower=EPS)
@@ -211,9 +206,12 @@ def build_features(df):
     d["upper_wick_ratio"] = d["upper_wick"] / d["range"]
     d["lower_wick_ratio"] = d["lower_wick"] / d["range"]
     d["range_vs_atr"] = d["range"] / d["atr"].replace(0, np.nan)
-    d["atr_pct"] = d["atr"] / d["close"].abs().clip(lower=EPS) * 100
+    d["atr_pct"] = (
+        d["atr"] / d["close"].abs().clip(lower=EPS) * 100
+    )
 
     d["st_dir"], d["st_upper"], d["st_lower"] = supertrend(d)
+
     return d
 
 
@@ -237,14 +235,20 @@ def detect_regime(df):
     else:
         low_w, high_w = 0.0015, 0.015
 
-    separation = abs(e21 - e50) / a if all(
-        np.isfinite(x) for x in [e21, e50, a]
-    ) and a > 0 else 0
+    separation = (
+        abs(e21 - e50) / a
+        if all(np.isfinite(x) for x in [e21, e50, a]) and a > 0
+        else 0
+    )
 
     if adx_v >= 25 and separation >= 0.20:
         if width >= high_w:
-            return "TREND_HIGH_VOL", 0.55, ["Strong trend with elevated volatility"]
-        return "TREND_LOW_VOL", 0.90, ["Strong trend with controlled volatility"]
+            return "TREND_HIGH_VOL", 0.55, [
+                "Strong trend with elevated volatility"
+            ]
+        return "TREND_LOW_VOL", 0.90, [
+            "Strong trend with controlled volatility"
+        ]
 
     if adx_v < 20 and width <= low_w:
         return "RANGE_LOW_VOL", 0.35, ["Compressed range"]
@@ -253,15 +257,15 @@ def detect_regime(df):
         return "RANGE_HIGH_VOL", 0.30, ["Wide unstable range"]
 
     if adx_v >= 20:
-        return "DEVELOPING_TREND", 0.75, ["Developing directional movement"]
+        return "DEVELOPING_TREND", 0.75, [
+            "Developing directional movement"
+        ]
 
     return "RANGE", 0.45, ["Sideways/ranging market"]
 
 
 # ============================================================
-# NORMALIZED EXPERTS
-# Each expert returns a score in approximately [-1, +1].
-# Positive = CALL evidence, negative = PUT evidence.
+# NORMALIZED EXPERTS [-1,+1]
 # ============================================================
 
 def trend_expert(df):
@@ -269,31 +273,38 @@ def trend_expert(df):
     score = 0.0
     reasons = []
 
-    e9, e21, e50, e100, e200 = [safe(last[x]) for x in ["ema9","ema21","ema50","ema100","ema200"]]
+    e9, e21, e50, e100, e200 = [
+        safe(last[x])
+        for x in ["ema9", "ema21", "ema50", "ema100", "ema200"]
+    ]
     close = safe(last["close"])
-    plus, minus, adx_v = safe(last["plus_di"]), safe(last["minus_di"]), safe(last["adx"])
+    plus, minus, adx_v = (
+        safe(last["plus_di"]),
+        safe(last["minus_di"]),
+        safe(last["adx"]),
+    )
 
     if e9 > e21 > e50:
-        score += 0.32
+        score += 0.28
         reasons.append("EMA 9/21/50 bullish alignment")
     elif e9 < e21 < e50:
-        score -= 0.32
+        score -= 0.28
         reasons.append("EMA 9/21/50 bearish alignment")
     else:
         reasons.append("EMA structure mixed")
 
     if e50 > e100 > e200:
-        score += 0.22
+        score += 0.18
         reasons.append("Long EMA structure bullish")
     elif e50 < e100 < e200:
-        score -= 0.22
+        score -= 0.18
         reasons.append("Long EMA structure bearish")
 
     if close > e200:
-        score += 0.16
+        score += 0.14
         reasons.append("Price above EMA200")
     elif close < e200:
-        score -= 0.16
+        score -= 0.14
         reasons.append("Price below EMA200")
 
     if plus > minus:
@@ -325,91 +336,104 @@ def momentum_expert(df):
     hist, prev_hist = safe(last["macd_hist"]), safe(prev["macd_hist"])
     r = safe(last["rsi"])
     k, d = safe(last["stoch_k"]), safe(last["stoch_d"])
+    wr = safe(last["williams_r"])
     roc_v, cci_v = safe(last["roc9"]), safe(last["cci"])
 
     if hist > 0:
-        score += 0.22
+        score += 0.20
         reasons.append("MACD momentum bullish")
     elif hist < 0:
-        score -= 0.22
+        score -= 0.20
         reasons.append("MACD momentum bearish")
 
     if hist > prev_hist:
-        score += 0.10
+        score += 0.09
     elif hist < prev_hist:
-        score -= 0.10
+        score -= 0.09
 
     if 52 <= r <= 68:
-        score += 0.16
+        score += 0.14
         reasons.append("RSI healthy bullish momentum")
     elif 32 <= r <= 48:
-        score -= 0.16
+        score -= 0.14
         reasons.append("RSI bearish momentum")
     elif r > 75:
-        score -= 0.08
+        score -= 0.07
         reasons.append("RSI extremely stretched upward")
     elif r < 25:
-        score += 0.08
+        score += 0.07
         reasons.append("RSI extremely stretched downward")
 
     if k > d:
-        score += 0.10
+        score += 0.08
     elif k < d:
-        score -= 0.10
+        score -= 0.08
+
+    # Williams %R: extreme zones are treated as momentum/exhaustion,
+    # not automatic reversals.
+    if -55 <= wr <= -20:
+        score += 0.06
+    elif -80 <= wr <= -45:
+        score -= 0.06
 
     if roc_v > 0:
-        score += 0.10
+        score += 0.08
     elif roc_v < 0:
-        score -= 0.10
+        score -= 0.08
 
     if cci_v > 50:
-        score += 0.08
+        score += 0.07
     elif cci_v < -50:
-        score -= 0.08
+        score -= 0.07
 
     return float(np.clip(score, -1, 1)), reasons
 
 
 def price_action_expert(df):
-    if len(df) < 4:
+    if len(df) < 5:
         return 0.0, ["Price-action history insufficient"]
 
-    last, prev, prev2 = df.iloc[-1], df.iloc[-2], df.iloc[-3]
+    last, prev, prev2, prev3 = (
+        df.iloc[-1], df.iloc[-2], df.iloc[-3], df.iloc[-4]
+    )
     score = 0.0
     reasons = []
 
     close, op = safe(last["close"]), safe(last["open"])
     br = safe(last["body_ratio"])
-    upper, lower = safe(last["upper_wick_ratio"]), safe(last["lower_wick_ratio"])
+    upper, lower = (
+        safe(last["upper_wick_ratio"]),
+        safe(last["lower_wick_ratio"]),
+    )
     pc, po = safe(prev["close"]), safe(prev["open"])
 
     if close > op and br >= 0.60:
-        score += 0.25
+        score += 0.20
         reasons.append("Strong bullish candle body")
     elif close < op and br >= 0.60:
-        score -= 0.25
+        score -= 0.20
         reasons.append("Strong bearish candle body")
 
     if lower >= 0.45 and br < 0.50:
-        score += 0.16
+        score += 0.15
         reasons.append("Lower-wick rejection favors buyers")
     if upper >= 0.45 and br < 0.50:
-        score -= 0.16
+        score -= 0.15
         reasons.append("Upper-wick rejection favors sellers")
 
     if close > op and pc < po and close >= po and op <= pc:
-        score += 0.24
+        score += 0.20
         reasons.append("Bullish engulfing")
     elif close < op and pc > po and op >= pc and close <= po:
-        score -= 0.24
+        score -= 0.20
         reasons.append("Bearish engulfing")
 
     p2c, p2o = safe(prev2["close"]), safe(prev2["open"])
     if close > op and pc > po and p2c > p2o:
-        score += 0.12
+        score += 0.10
         reasons.append("Three-bar bullish continuation")
     elif close < op and pc < po and p2c < p2o:
-        score -= 0.12
+        score -= 0.10
         reasons.append("Three-bar bearish continuation")
 
     prior_high = safe(df["high"].iloc[-21:-1].max())
@@ -417,13 +441,12 @@ def price_action_expert(df):
     high, low = safe(last["high"]), safe(last["low"])
 
     if high > prior_high and close > prior_high:
-        score += 0.23
+        score += 0.20
         reasons.append("Bullish Donchian breakout")
     elif low < prior_low and close < prior_low:
-        score -= 0.23
+        score -= 0.20
         reasons.append("Bearish Donchian breakdown")
 
-    # Supertrend
     st = safe(last["st_dir"])
     if st > 0:
         score += 0.10
@@ -431,6 +454,16 @@ def price_action_expert(df):
     elif st < 0:
         score -= 0.10
         reasons.append("Supertrend bearish")
+
+    # Small 3-candle directional pressure check.
+    c3 = safe(prev3["close"]) - safe(prev3["open"])
+    c2 = safe(prev2["close"]) - safe(prev2["open"])
+    c1 = safe(prev["close"]) - safe(prev["open"])
+    c0 = safe(last["close"]) - safe(last["open"])
+    if c0 > 0 and c1 > 0 and c2 + c3 > 0:
+        score += 0.05
+    elif c0 < 0 and c1 < 0 and c2 + c3 < 0:
+        score -= 0.05
 
     return float(np.clip(score, -1, 1)), reasons
 
@@ -458,14 +491,14 @@ def structure_expert(df):
         score += 0.22
         reasons.append("Price above recent resistance")
     elif 0 <= dist_r <= 0.40 * a:
-        score -= 0.18
+        score -= 0.16
         reasons.append("Price close to resistance")
 
     if dist_s < 0:
         score -= 0.22
         reasons.append("Price below recent support")
     elif 0 <= dist_s <= 0.40 * a:
-        score += 0.18
+        score += 0.16
         reasons.append("Price close to support")
 
     upper, lower = safe(last["bb_upper"]), safe(last["bb_lower"])
@@ -481,14 +514,12 @@ def structure_expert(df):
 
 def volatility_expert(df):
     last = df.iloc[-1]
-    width = safe(last["bb_width"])
-    rva = safe(last["range_vs_atr"])
+    width, rva = safe(last["bb_width"]), safe(last["range_vs_atr"])
     widths = df["bb_width"].dropna()
 
     if len(widths) >= 60:
         sample = widths.tail(120)
-        low_w = float(sample.quantile(0.20))
-        high_w = float(sample.quantile(0.80))
+        low_w, high_w = float(sample.quantile(0.20)), float(sample.quantile(0.80))
     else:
         low_w, high_w = 0.0015, 0.015
 
@@ -502,13 +533,206 @@ def volatility_expert(df):
 
 
 # ============================================================
-# MULTI-TIMEFRAME EVIDENCE
+# ROUND-NUMBER / PSYCHOLOGICAL LEVEL EXPERT
+# ============================================================
+
+def round_level_size(symbol, price, atr_value):
+    """
+    For common FX quotes:
+      EURUSD/AUDUSD/etc. -> major 0.00100, half 0.00050
+      JPY pairs          -> major 0.100, half 0.050
+
+    For other instruments, derive a practical round step from
+    price magnitude. This is an evidence heuristic, not a guarantee.
+    """
+    s = (symbol or "").upper().replace("/", "").replace("_", "")
+    if "JPY" in s:
+        major = 0.10
+    elif price < 10:
+        major = 0.001
+    elif price < 100:
+        major = 0.10
+    elif price < 1000:
+        major = 1.0
+    elif price < 10000:
+        major = 10.0
+    else:
+        major = 100.0
+
+    # If the instrument's ATR is much smaller/larger, retain the
+    # psychological step but prevent it from being absurdly distant.
+    if np.isfinite(atr_value) and atr_value > 0:
+        if atr_value < major * 0.12:
+            major = max(major / 2.0, 10 ** (-max(0, int(np.floor(np.log10(price))) - 4)))
+        elif atr_value > major * 8:
+            major *= 2.0
+
+    return major
+
+
+def round_number_expert(df, symbol=""):
+    """
+    Detects reactions around major (000) and half (050) levels.
+    It rewards REJECTION + close back away from the level and
+    penalizes clean breakout-follow-through only slightly.
+
+    It never says 'touch = reversal'.
+    """
+    if len(df) < 6:
+        return 0.0, {"level": None, "type": "NONE", "distance": None}, [
+            "Round-level history insufficient"
+        ]
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    prev2 = df.iloc[-3]
+
+    price = safe(last["close"])
+    a = safe(last["atr"])
+    if not np.isfinite(price) or not np.isfinite(a) or a <= 0:
+        return 0.0, {"level": None, "type": "NONE", "distance": None}, [
+            "Round-level data unavailable"
+        ]
+
+    major = round_level_size(symbol, price, a)
+    half = major / 2.0
+
+    # Candidate psychological levels around the current price.
+    base = np.floor(price / major) * major
+    levels = [
+        (base, "000"),
+        (base + half, "050"),
+        (base + major, "000"),
+    ]
+
+    tolerance = max(0.18 * a, half * 0.20)
+
+    chosen = min(
+        levels,
+        key=lambda item: abs(price - item[0])
+    )
+    level, level_type = chosen
+    distance = abs(price - level)
+
+    # Also consider a nearby level touched by previous candles.
+    candidates = [chosen]
+    for lv, typ in levels:
+        if abs(safe(prev["high"]) - lv) <= tolerance or abs(safe(prev["low"]) - lv) <= tolerance:
+            candidates.append((lv, typ))
+
+    # Deduplicate by level and select the most relevant touched/near level.
+    unique = {}
+    for lv, typ in candidates:
+        unique[round(lv, 12)] = (lv, typ)
+
+    chosen = min(
+        unique.values(),
+        key=lambda item: abs(price - item[0])
+    )
+    level, level_type = chosen
+
+    last_high = safe(last["high"])
+    last_low = safe(last["low"])
+    last_open = safe(last["open"])
+    last_close = safe(last["close"])
+    prev_high = safe(prev["high"])
+    prev_low = safe(prev["low"])
+    prev_close = safe(prev["close"])
+
+    score = 0.0
+    reasons = []
+
+    near_now = abs(price - level) <= tolerance
+    touched_now = last_low <= level <= last_high
+    touched_prev = prev_low <= level <= prev_high
+
+    # Rejection from above: touch level, close below it -> bearish.
+    bearish_reject = (
+        (touched_now or touched_prev)
+        and last_close < level
+        and last_high >= level
+        and (last_high - max(last_open, last_close)) / max(last_high - last_low, EPS) >= 0.30
+    )
+
+    # Rejection from below: touch level, close above it -> bullish.
+    bullish_reject = (
+        (touched_now or touched_prev)
+        and last_close > level
+        and last_low <= level
+        and (min(last_open, last_close) - last_low) / max(last_high - last_low, EPS) >= 0.30
+    )
+
+    # Stronger rejection when the previous candle also tested the level
+    # and closed back on the same side.
+    prev_bearish_reject = (
+        touched_prev
+        and prev_close < level
+        and prev_high >= level
+    )
+    prev_bullish_reject = (
+        touched_prev
+        and prev_close > level
+        and prev_low <= level
+    )
+
+    if bearish_reject:
+        score -= 0.55
+        reasons.append(f"Bearish rejection at psychological {level_type} level {level:.5f}")
+        if prev_bearish_reject:
+            score -= 0.20
+            reasons.append("Previous candle also rejected the round level")
+
+    elif bullish_reject:
+        score += 0.55
+        reasons.append(f"Bullish rejection at psychological {level_type} level {level:.5f}")
+        if prev_bullish_reject:
+            score += 0.20
+            reasons.append("Previous candle also rejected the round level")
+
+    elif near_now:
+        # Proximity alone is weak evidence, never a reversal trigger.
+        if last_close < last_open:
+            score -= 0.08
+        elif last_close > last_open:
+            score += 0.08
+        reasons.append(
+            f"Price is near psychological {level_type} level {level:.5f}; no confirmed rejection"
+        )
+
+    # Clean close through the level with a strong body is breakout evidence.
+    body_ratio = safe(last["body_ratio"])
+    if last_close > level and last_open > level and body_ratio >= 0.60:
+        score += 0.20
+        reasons.append("Strong bullish close above round level")
+    elif last_close < level and last_open < level and body_ratio >= 0.60:
+        score -= 0.20
+        reasons.append("Strong bearish close below round level")
+
+    score = float(np.clip(score, -1, 1))
+
+    info = {
+        "level": round(float(level), 8),
+        "type": level_type,
+        "distance": round(float(abs(price - level)), 8),
+        "major_step": round(float(major), 8),
+        "half_step": round(float(half), 8),
+        "rejection": (
+            "BEARISH" if score < -0.25 and (bearish_reject or prev_bearish_reject)
+            else "BULLISH" if score > 0.25 and (bullish_reject or prev_bullish_reject)
+            else "NONE"
+        ),
+    }
+
+    return score, info, reasons
+
+
+# ============================================================
+# MULTI-TIMEFRAME
 # ============================================================
 
 def timeframe_score(df):
     t, tr = trend_expert(df)
     m, mr = momentum_expert(df)
-    # Trend + momentum, balanced inside each timeframe.
     return float(np.clip(0.58 * t + 0.42 * m, -1, 1)), tr + mr
 
 
@@ -521,12 +745,20 @@ def mtf_expert(f1, f5, f15):
     return float(np.clip(score, -1, 1)), [s1, s5, s15], r1 + r5 + r15
 
 
+def agreement_count(tf_scores, candidate):
+    if candidate == "CALL":
+        return sum(x > 0 for x in tf_scores)
+    if candidate == "PUT":
+        return sum(x < 0 for x in tf_scores)
+    return 0
+
+
 # ============================================================
-# DIRECTION PERCENT
+# DIRECTION EVIDENCE
 # ============================================================
 
 def direction_percent(total_score):
-    # Relative evidence share, deliberately NOT called probability.
+    # Relative model evidence share, not win probability.
     x = float(np.clip(total_score, -1, 1))
     call = 50.0 + 50.0 * x
     put = 100.0 - call
@@ -534,15 +766,18 @@ def direction_percent(total_score):
 
 
 # ============================================================
-# ENTRY TIMING
+# ENTRY QUALITY / TIMING
 # ============================================================
 
-def entry_timing(candles, candidate, regime, total_score):
+def entry_timing(candles, candidate, regime, total_score, round_score=0.0):
     if not candles:
         return "NO TRADE", 0.0, None, "Current candle unavailable"
 
     c = candles[-1]
-    op, hi, lo, cl, ts = [safe(c.get(k)) for k in ["open","high","low","close","timestamp"]]
+    op, hi, lo, cl, ts = [
+        safe(c.get(k))
+        for k in ["open", "high", "low", "close", "timestamp"]
+    ]
 
     if not all(np.isfinite(x) for x in [op, hi, lo, cl]):
         return "NO TRADE", 0.0, None, "Current candle invalid"
@@ -555,7 +790,6 @@ def entry_timing(candles, candidate, regime, total_score):
         favorable = cl > op
         location = close_pos
     elif candidate == "PUT":
-        # FIX: bearish candle is close < open.
         favorable = cl < op
         location = 1.0 - close_pos
     else:
@@ -565,43 +799,49 @@ def entry_timing(candles, candidate, regime, total_score):
     reasons = []
 
     if favorable:
-        q += 1.8
+        q += 1.5
         reasons.append("Current candle body supports direction")
     else:
-        q -= 1.8
+        q -= 1.2
         reasons.append("Current candle body opposes direction")
 
     if location >= 0.70:
-        q += 1.4
+        q += 1.2
         reasons.append("Candle closes near favorable side")
     elif location <= 0.35:
-        q -= 1.4
+        q -= 1.2
         reasons.append("Candle closes against candidate")
 
     if body_ratio < 0.25:
-        q -= 1.6
+        q -= 1.4
         reasons.append("Current candle is indecisive")
 
     if body_ratio >= 0.75:
-        q -= 1.3
+        q -= 1.4
         reasons.append("Current candle is already extended")
 
-    if regime in {"RANGE", "RANGE_LOW_VOL", "RANGE_HIGH_VOL"}:
-        q -= 0.7
-        reasons.append("Range regime favors waiting for cleaner entry")
+    if regime in {"RANGE", "RANGE_LOW_VOL"}:
+        q -= 0.5
+        reasons.append("Range regime requires cleaner entry")
 
     if abs(total_score) >= 0.70:
-        q += 0.8
+        q += 0.7
         reasons.append("Directional evidence is strong")
+
+    if candidate == "CALL" and round_score > 0.25:
+        q += 0.5
+        reasons.append("Round-level reaction supports CALL")
+    elif candidate == "PUT" and round_score < -0.25:
+        q += 0.5
+        reasons.append("Round-level reaction supports PUT")
 
     q = float(np.clip(q, 0, 10))
 
-    # Current = clean live candle. Next = direction remains strong but
-    # current candle is too weak/extended for a clean immediate entry.
+    # Current = evidence and candle position are aligned.
+    # Next = directional evidence remains usable but current candle
+    # is not a clean immediate entry. We do not fabricate a future candle.
     if q >= 6.2 and body_ratio < 0.75:
         entry = "CURRENT CANDLE"
-    elif q >= 3.5:
-        entry = "NEXT CANDLE"
     else:
         entry = "NEXT CANDLE"
 
@@ -614,11 +854,16 @@ def entry_timing(candles, candidate, regime, total_score):
         except Exception:
             progress = None
 
-    return entry, round(q, 2), round(progress, 2) if progress is not None else None, "; ".join(reasons)
+    return (
+        entry,
+        round(q, 2),
+        round(progress, 2) if progress is not None else None,
+        "; ".join(reasons),
+    )
 
 
 # ============================================================
-# MAIN ANALYSIS
+# ERROR
 # ============================================================
 
 def _error(status, reason):
@@ -637,7 +882,11 @@ def _error(status, reason):
     }
 
 
-def analyze(candles_1m, candles_5m, candles_15m, ticks_5s=None):
+# ============================================================
+# MAIN ANALYSIS
+# ============================================================
+
+def analyze(candles_1m, candles_5m, candles_15m, ticks_5s=None, symbol=""):
     if not candles_1m:
         return _error("DATA_NOT_CONNECTED", "1-minute live data unavailable")
 
@@ -654,7 +903,11 @@ def analyze(candles_1m, candles_5m, candles_15m, ticks_5s=None):
     except Exception as exc:
         return _error("INDICATOR_ERROR", f"Indicator calculation failed: {exc}")
 
-    if len(f1) < MIN_TF_CANDLES or len(f5) < MIN_TF_CANDLES or len(f15) < MIN_TF_CANDLES:
+    if (
+        len(f1) < MIN_TF_CANDLES
+        or len(f5) < MIN_TF_CANDLES
+        or len(f15) < MIN_TF_CANDLES
+    ):
         return _error(
             "INDICATORS_NOT_READY",
             "Multi-timeframe indicator history is not warmed up",
@@ -669,43 +922,52 @@ def analyze(candles_1m, candles_5m, candles_15m, ticks_5s=None):
         structure, structure_reasons = structure_expert(f1)
         vol, vol_regime, vol_reasons = volatility_expert(f1)
         mtf, tf_scores, mtf_reasons = mtf_expert(f1, f5, f15)
-
-        # Regime adaptively adjusts expert influence without creating
-        # a hard signal veto.
-        trend_w = WEIGHTS["trend"]
-        momentum_w = WEIGHTS["momentum"]
-        pa_w = WEIGHTS["price_action"]
-        structure_w = WEIGHTS["structure"]
-        vol_w = WEIGHTS["volatility"]
-        mtf_w = WEIGHTS["mtf"]
-
-        if regime in {"TREND_LOW_VOL", "DEVELOPING_TREND"}:
-            trend_w *= 1.12
-            mtf_w *= 1.10
-        elif regime == "TREND_HIGH_VOL":
-            pa_w *= 1.08
-            vol_w *= 0.90
-        elif regime in {"RANGE", "RANGE_LOW_VOL"}:
-            structure_w *= 1.12
-            pa_w *= 0.92
-            trend_w *= 0.88
-        elif regime == "RANGE_HIGH_VOL":
-            pa_w *= 0.90
-            trend_w *= 0.85
-            vol_w *= 0.85
-
-        raw = (
-            trend_w * trend
-            + momentum_w * momentum
-            + pa_w * pa
-            + structure_w * structure
-            + vol_w * vol
-            + mtf_w * mtf
+        round_score, round_info, round_reasons = round_number_expert(
+            f1, symbol
         )
 
-        # Normalize by effective weights so the score remains comparable.
-        eff = trend_w + momentum_w + pa_w + structure_w + vol_w + mtf_w
-        total = float(np.clip(raw / max(eff, EPS), -1, 1))
+        w = dict(BASE_WEIGHTS)
+
+        # Adaptive weighting: no hard directional veto.
+        if regime == "TREND_LOW_VOL":
+            w["trend"] *= 1.12
+            w["mtf"] *= 1.12
+            w["price_action"] *= 1.02
+        elif regime == "DEVELOPING_TREND":
+            w["trend"] *= 1.06
+            w["mtf"] *= 1.08
+            w["momentum"] *= 1.04
+        elif regime == "TREND_HIGH_VOL":
+            w["price_action"] *= 1.10
+            w["round_level"] *= 1.05
+            w["volatility"] *= 0.90
+        elif regime == "RANGE":
+            w["structure"] *= 1.15
+            w["round_level"] *= 1.18
+            w["trend"] *= 0.82
+            w["mtf"] *= 0.90
+        elif regime == "RANGE_LOW_VOL":
+            w["structure"] *= 1.18
+            w["round_level"] *= 1.20
+            w["trend"] *= 0.78
+            w["mtf"] *= 0.88
+        elif regime == "RANGE_HIGH_VOL":
+            w["price_action"] *= 0.94
+            w["trend"] *= 0.84
+            w["volatility"] *= 0.85
+
+        raw = (
+            w["trend"] * trend
+            + w["momentum"] * momentum
+            + w["price_action"] * pa
+            + w["structure"] * structure
+            + w["volatility"] * vol
+            + w["mtf"] * mtf
+            + w["round_level"] * round_score
+        )
+
+        effective_weight = sum(w.values())
+        total = float(np.clip(raw / max(effective_weight, EPS), -1, 1))
 
         call_pct, put_pct = direction_percent(total)
 
@@ -716,29 +978,52 @@ def analyze(candles_1m, candles_5m, candles_15m, ticks_5s=None):
         else:
             candidate = "NO TRADE"
 
+        agreement = agreement_count(tf_scores, candidate)
+
         entry, entry_q, progress, entry_reason = entry_timing(
-            candles_1m, candidate, regime, total
+            candles_1m,
+            candidate,
+            regime,
+            total,
+            round_score,
         )
 
-        # User-requested behavior: once live/valid data and indicators
-        # are ready, the stronger directional side is selected.
-        decision = candidate if candidate != "NO TRADE" else "NO TRADE"
+        # Final decision:
+        # valid live data + ready indicators -> stronger directional side.
+        # There is no arbitrary old score threshold. The engine still
+        # reports entry quality and evidence so the user can review risk.
+        decision = candidate
         status = "SIGNAL" if decision != "NO TRADE" else "FILTERED"
 
-        # Confidence is a strength score, NOT a calibrated probability.
         edge = abs(call_pct - put_pct)
-        confidence = int(np.clip(50 + edge * 0.85 + entry_q * 1.2 + (regime_strength - 0.5) * 10, 1, 95))
+        confidence = int(np.clip(
+            45
+            + edge * 0.65
+            + entry_q * 2.0
+            + agreement * 3.0
+            + (regime_strength - 0.5) * 8,
+            1,
+            95,
+        ))
 
         reasons = []
         reasons.extend(regime_reasons)
         reasons.extend(trend_reasons)
         reasons.extend(momentum_reasons)
-        reasons.extend(mtf_reasons)
         reasons.extend(pa_reasons)
         reasons.extend(structure_reasons)
         reasons.extend(vol_reasons)
-        reasons.append(f"MTF scores: 1M {tf_scores[0]:+.2f}, 5M {tf_scores[1]:+.2f}, 15M {tf_scores[2]:+.2f}")
-        reasons.append(f"Direction evidence: CALL {call_pct:.1f}% / PUT {put_pct:.1f}%")
+        reasons.extend(round_reasons)
+        reasons.extend(mtf_reasons)
+
+        reasons.append(
+            f"MTF scores: 1M {tf_scores[0]:+.2f}, "
+            f"5M {tf_scores[1]:+.2f}, 15M {tf_scores[2]:+.2f}"
+        )
+        reasons.append(
+            f"Direction evidence: CALL {call_pct:.1f}% / PUT {put_pct:.1f}%"
+        )
+        reasons.append(f"Round level: {round_info}")
         reasons.append(f"Entry timing: {entry}")
         reasons.append(f"Entry quality: {entry_q:.2f}/10")
         if entry_reason:
@@ -765,7 +1050,10 @@ def analyze(candles_1m, candles_5m, candles_15m, ticks_5s=None):
             "cci": round(safe(last["cci"]), 2),
             "bb_width": round(safe(last["bb_width"]), 6),
             "atr_pct": round(safe(last["atr_pct"]), 4),
-            "supertrend": "BULLISH" if safe(last["st_dir"]) > 0 else "BEARISH",
+            "supertrend": (
+                "BULLISH" if safe(last["st_dir"]) > 0 else "BEARISH"
+            ),
+            "round_level": round_info,
         }
 
         return {
@@ -789,10 +1077,9 @@ def analyze(candles_1m, candles_5m, candles_15m, ticks_5s=None):
                 "5m": int(round(tf_scores[1] * 100)),
                 "15m": int(round(tf_scores[2] * 100)),
             },
-            "mtf_agreement": int(sum(
-                (s > 0 if candidate == "CALL" else s < 0)
-                for s in tf_scores
-            )) if candidate != "NO TRADE" else 0,
+            "mtf_agreement": int(agreement),
+            "round_level": round_info,
+            "round_level_score": round(round_score, 4),
             "confirmation_ratio": None,
             "confirmation_mode": "5S_DISABLED",
             "indicators": indicators,
