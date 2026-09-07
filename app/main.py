@@ -11,7 +11,7 @@ from .live_feed import LiveFeed
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="QX AI Live Scanner V5", version="5.0")
+app = FastAPI(title="QX AI Live Scanner V7", version="7.0")
 
 _FEEDS: dict[str, LiveFeed] = {}
 _FEEDS_LOCK = asyncio.Lock()
@@ -84,8 +84,8 @@ def home():
 def health():
     return {
         "ok": True,
-        "service": "QX AI Live Scanner V5",
-        "version": "5.0",
+        "service": "QX AI Live Scanner V7",
+        "version": "7.0",
         "mode": "SIGNAL_ONLY",
         "automatic_trading": False,
         "live_feed": True
@@ -160,7 +160,8 @@ async def scan(
             candles_1m=live["candles_1m"],
             candles_5m=live["candles_5m"],
             candles_15m=live["candles_15m"],
-            ticks_5s=live["ticks_5s"]
+            ticks_5s=live["ticks_5s"],
+            symbol=live["symbol"]
         )
 
         result["source"] = "BiQuote"
@@ -180,7 +181,8 @@ async def scan(
         candles_1m=candles_1m,
         candles_5m=candles_5m,
         candles_15m=candles_15m,
-        ticks_5s=ticks_5s
+        ticks_5s=ticks_5s,
+        symbol=request.symbol or ""
     )
     result["live_data"] = False
     return result
