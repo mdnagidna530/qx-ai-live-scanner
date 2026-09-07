@@ -3,1877 +3,318 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-
 <title>QX AI Live Scanner V4</title>
-
 <style>
-*{
-    box-sizing:border-box;
-}
-
-body{
-    margin:0;
-    background:#080d14;
-    color:#e8eef7;
-    font-family:Arial,Helvetica,sans-serif;
-}
-
-.container{
-    width:min(1100px,94%);
-    margin:auto;
-}
-
-header{
-    padding:22px 0 14px;
-    border-bottom:1px solid #1d2938;
-}
-
-.logo{
-    font-size:25px;
-    font-weight:800;
-    letter-spacing:.3px;
-}
-
-.sub{
-    color:#7f8da0;
-    font-size:13px;
-    margin-top:5px;
-}
-
-.status{
-    margin:18px 0;
-    padding:12px 15px;
-    border:1px solid #253244;
-    border-radius:10px;
-    background:#0d141e;
-    font-size:13px;
-}
-
-.dot{
-    display:inline-block;
-    width:9px;
-    height:9px;
-    border-radius:50%;
-    background:#777;
-    margin-right:7px;
-}
-
-.grid{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:16px;
-}
-
-.card{
-    background:#0d141e;
-    border:1px solid #202d3d;
-    border-radius:14px;
-    padding:18px;
-}
-
-.card h2{
-    font-size:16px;
-    margin:0 0 15px;
-}
-
-label{
-    display:block;
-    font-size:12px;
-    color:#91a0b2;
-    margin:12px 0 6px;
-}
-
-input,
-textarea,
-select{
-    width:100%;
-    border:1px solid #29384b;
-    background:#080e16;
-    color:#e8eef7;
-    border-radius:9px;
-    padding:12px;
-    outline:none;
-}
-
-select{
-    cursor:pointer;
-}
-
-textarea{
-    min-height:105px;
-    resize:vertical;
-    font-family:monospace;
-    font-size:12px;
-}
-
-button{
-    width:100%;
-    border:0;
-    border-radius:10px;
-    padding:13px;
-    margin-top:14px;
-    font-weight:700;
-    cursor:pointer;
-}
-
-.primary{
-    background:#237a4b;
-    color:white;
-}
-
-.secondary{
-    background:#1a2635;
-    color:#dce6f2;
-}
-
-.live-button{
-    background:#24558c;
-    color:white;
-}
-
-button:disabled{
-    opacity:.45;
-    cursor:not-allowed;
-}
-
-.signal{
-    min-height:210px;
-    display:flex;
-    flex-direction:column;
-    justify-content:center;
-    align-items:center;
-    text-align:center;
-}
-
-.signal-word{
-    font-size:48px;
-    font-weight:900;
-    letter-spacing:2px;
-}
-
-.no-trade{
-    color:#9aa7b7;
-}
-
-.call{
-    color:#35d477;
-}
-
-.put{
-    color:#ff6674;
-}
-
-.confidence{
-    margin-top:8px;
-    color:#aab7c7;
-}
-
-.reason{
-    margin-top:14px;
-    padding:12px;
-    width:100%;
-    background:#080e16;
-    border-radius:9px;
-    color:#aab7c7;
-    font-size:12px;
-    line-height:1.6;
-}
-
-.metrics{
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:9px;
-    margin-top:14px;
-}
-
-.metric{
-    background:#080e16;
-    border:1px solid #1d2938;
-    border-radius:9px;
-    padding:12px;
-}
-
-.metric-title{
-    font-size:10px;
-    color:#718095;
-}
-
-.metric-value{
-    font-size:15px;
-    font-weight:700;
-    margin-top:5px;
-}
-
-.live-price{
-    font-size:24px;
-    font-weight:800;
-    margin-top:8px;
-}
-
-.full{
-    grid-column:1/-1;
-}
-
-.history{
-    max-height:230px;
-    overflow:auto;
-    font-size:12px;
-}
-
-.history-row{
-    display:flex;
-    justify-content:space-between;
-    gap:10px;
-    padding:10px 4px;
-    border-bottom:1px solid #182332;
-}
-
-.warning{
-    color:#e4a84c;
-}
-
-.success{
-    color:#38d47a;
-}
-
-.error{
-    color:#ff6674;
-}
-
-.info{
-    color:#6fa8ff;
-}
-
-.connection-box{
-    margin-top:12px;
-    padding:12px;
-    background:#080e16;
-    border:1px solid #1d2938;
-    border-radius:9px;
-    font-size:12px;
-    line-height:1.7;
-}
-
-footer{
-    text-align:center;
-    padding:25px 0;
-    color:#657387;
-    font-size:11px;
-}
-
-@media(max-width:720px){
-
-    .grid{
-        grid-template-columns:1fr;
-    }
-
-    .full{
-        grid-column:auto;
-    }
-
-    .signal-word{
-        font-size:40px;
-    }
-
-    .metrics{
-        grid-template-columns:repeat(2,1fr);
-    }
-}
+*{box-sizing:border-box}
+body{margin:0;background:#080d14;color:#e8eef7;font-family:Arial,Helvetica,sans-serif}
+.container{width:min(1100px,94%);margin:auto}
+header{padding:22px 0 14px;border-bottom:1px solid #1d2938}
+.logo{font-size:25px;font-weight:800}
+.sub{color:#7f8da0;font-size:13px;margin-top:5px}
+.status{margin:18px 0;padding:12px 15px;border:1px solid #253244;border-radius:10px;background:#0d141e;font-size:13px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#777;margin-right:7px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:#0d141e;border:1px solid #202d3d;border-radius:14px;padding:18px}
+.card h2{font-size:16px;margin:0 0 15px}
+label{display:block;font-size:12px;color:#91a0b2;margin:12px 0 6px}
+input,textarea,select{width:100%;border:1px solid #29384b;background:#080e16;color:#e8eef7;border-radius:9px;padding:12px;outline:none}
+button{width:100%;border:0;border-radius:10px;padding:13px;margin-top:14px;font-weight:700;cursor:pointer}
+.primary{background:#237a4b;color:white}.secondary{background:#1a2635;color:#dce6f2}.live-button{background:#24558c;color:white}
+button:disabled{opacity:.45;cursor:not-allowed}
+.full{grid-column:1/-1}
+.signal{min-height:210px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+.signal-word{font-size:48px;font-weight:900;letter-spacing:2px}.no-trade{color:#9aa7b7}.call{color:#35d477}.put{color:#ff6674}
+.confidence{margin-top:8px;color:#aab7c7}.reason{margin-top:14px;padding:12px;width:100%;background:#080e16;border-radius:9px;color:#aab7c7;font-size:12px;line-height:1.6}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:14px}
+.metric{background:#080e16;border:1px solid #1d2938;border-radius:9px;padding:12px}.metric-title{font-size:10px;color:#718095}.metric-value{font-size:15px;font-weight:700;margin-top:5px}
+.live-price{font-size:24px;font-weight:800;margin-top:8px}.history{max-height:230px;overflow:auto;font-size:12px}
+.history-row{display:flex;justify-content:space-between;gap:10px;padding:10px 4px;border-bottom:1px solid #182332}
+.warning{color:#e4a84c}.success{color:#38d47a}.error{color:#ff6674}.info{color:#6fa8ff}
+.connection-box{margin-top:12px;padding:12px;background:#080e16;border:1px solid #1d2938;border-radius:9px;font-size:12px;line-height:1.7}
+footer{text-align:center;padding:25px 0;color:#657387;font-size:11px}
+details{cursor:pointer}
+.reason-list{margin:10px 0 0;padding-left:18px;color:#9eabbc;font-size:12px;line-height:1.6}
+@media(max-width:720px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.signal-word{font-size:40px}.metrics{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
-
 <body>
-
 <div class="container">
-
 <header>
-    <div class="logo">
-        QX AI LIVE SCANNER
-        <span style="color:#5e8cff">V4</span>
-    </div>
-
-    <div class="sub">
-        Signal-only market analysis • Manual trading • No automatic execution
-    </div>
+<div class="logo">QX AI LIVE SCANNER <span style="color:#5e8cff">V4</span></div>
+<div class="sub">Signal-only market analysis • Manual trading • No automatic execution</div>
 </header>
 
-
-<!-- SYSTEM STATUS -->
-
-<div class="status">
-    <span id="statusDot" class="dot"></span>
-    <span id="statusText">SYSTEM NOT CONNECTED</span>
-</div>
-
+<div class="status"><span id="statusDot" class="dot"></span><span id="statusText">SYSTEM NOT CONNECTED</span></div>
 
 <div class="grid">
-
-
-<!-- =====================================================
-     LOGIN
-===================================================== -->
+<div class="card">
+<h2>🔐 Secure Access</h2>
+<label>Password</label>
+<input id="password" type="password" placeholder="Enter password" autocomplete="off">
+<button class="primary" id="loginBtn" onclick="login()">LOGIN</button>
+<div id="loginMessage" style="margin-top:10px;font-size:12px"></div>
+</div>
 
 <div class="card">
-
-    <h2>🔐 Secure Access</h2>
-
-    <label>Password</label>
-
-    <input
-        id="password"
-        type="password"
-        placeholder="Enter password"
-        autocomplete="off"
-    >
-
-    <button
-        class="primary"
-        id="loginBtn"
-        onclick="login()"
-    >
-        LOGIN
-    </button>
-
-    <div
-        id="loginMessage"
-        style="margin-top:10px;font-size:12px"
-    ></div>
-
+<h2>📊 Market Scanner</h2>
+<label>Market / Symbol</label>
+<select id="symbol">
+<option value="EURUSD">EUR/USD</option><option value="GBPUSD">GBP/USD</option>
+<option value="USDJPY">USD/JPY</option><option value="USDCHF">USD/CHF</option>
+<option value="AUDUSD">AUD/USD</option><option value="USDCAD">USD/CAD</option>
+<option value="NZDUSD">NZD/USD</option><option value="EURGBP">EUR/GBP</option>
+<option value="EURJPY">EUR/JPY</option><option value="GBPJPY">GBP/JPY</option>
+<option value="XAUUSD">XAU/USD</option>
+</select>
+<label>Analysis Mode</label>
+<select id="mode"><option value="strict">STRICT — HIGH FILTER</option><option value="balanced">BALANCED</option></select>
+<button class="live-button" id="connectBtn" onclick="connectMarket()" disabled>CONNECT LIVE MARKET</button>
+<button class="secondary" id="scanBtn" onclick="requestScan()" disabled>SCAN MARKET</button>
 </div>
-
-
-<!-- =====================================================
-     MARKET SCANNER
-===================================================== -->
-
-<div class="card">
-
-    <h2>📊 Market Scanner</h2>
-
-    <label>Market / Symbol</label>
-
-    <select id="symbol">
-
-        <option value="EURUSD">EUR/USD</option>
-        <option value="GBPUSD">GBP/USD</option>
-        <option value="USDJPY">USD/JPY</option>
-        <option value="USDCHF">USD/CHF</option>
-        <option value="AUDUSD">AUD/USD</option>
-        <option value="USDCAD">USD/CAD</option>
-        <option value="NZDUSD">NZD/USD</option>
-        <option value="EURGBP">EUR/GBP</option>
-        <option value="EURJPY">EUR/JPY</option>
-        <option value="GBPJPY">GBP/JPY</option>
-        <option value="XAUUSD">XAU/USD</option>
-
-    </select>
-
-
-    <label>Analysis Mode</label>
-
-    <select id="mode">
-
-        <option value="strict">
-            STRICT — HIGH FILTER
-        </option>
-
-        <option value="balanced">
-            BALANCED
-        </option>
-
-    </select>
-
-
-    <button
-        class="live-button"
-        id="connectBtn"
-        onclick="connectMarket()"
-        disabled
-    >
-        CONNECT LIVE MARKET
-    </button>
-
-
-    <button
-        class="secondary"
-        id="scanBtn"
-        onclick="requestScan()"
-        disabled
-    >
-        SCAN MARKET
-    </button>
-
-</div>
-
-
-<!-- =====================================================
-     LIVE PRICE
-===================================================== -->
 
 <div class="card full">
-
-    <h2>💹 Live Market</h2>
-
-    <div
-        id="liveSymbol"
-        class="sub"
-    >
-        Market: —
-    </div>
-
-    <div
-        id="livePrice"
-        class="live-price"
-    >
-        —
-    </div>
-
-    <div
-        id="liveConnection"
-        class="connection-box"
-    >
-        Live feed: NOT CONNECTED
-    </div>
-
+<h2>💹 Live Market</h2>
+<div id="liveSymbol" class="sub">Market: —</div>
+<div id="livePrice" class="live-price">—</div>
+<div id="liveConnection" class="connection-box">Live feed: NOT CONNECTED</div>
 </div>
-
-
-<!-- =====================================================
-     LIVE DECISION
-===================================================== -->
 
 <div class="card full">
-
-    <h2>🧠 LIVE DECISION</h2>
-
-    <div class="signal">
-
-        <div
-            id="signal"
-            class="signal-word no-trade"
-        >
-            NO TRADE
-        </div>
-
-
-        <div
-            id="confidence"
-            class="confidence"
-        >
-            Waiting for verified live data
-        </div>
-
-
-        <div
-            id="reason"
-            class="reason"
-        >
-            Select a market and connect to the verified
-            live market-data feed before scanning.
-        </div>
-
-    </div>
-
+<h2>🧠 LIVE DECISION</h2>
+<div class="signal">
+<div id="signal" class="signal-word no-trade">NO TRADE</div>
+<div id="confidence" class="confidence">Waiting for verified live data</div>
+<div id="reason" class="reason">Select a market and connect to the verified live market-data feed before scanning.</div>
 </div>
-
-
-<!-- =====================================================
-     MARKET STATE
-===================================================== -->
+</div>
 
 <div class="card full">
-
-    <h2>📈 Market State</h2>
-
-    <div class="metrics">
-
-
-        <div class="metric">
-
-            <div class="metric-title">
-                1 MIN
-            </div>
-
-            <div
-                id="m1"
-                class="metric-value"
-            >
-                WAITING
-            </div>
-
-        </div>
-
-
-        <div class="metric">
-
-            <div class="metric-title">
-                5 MIN
-            </div>
-
-            <div
-                id="m5"
-                class="metric-value"
-            >
-                WAITING
-            </div>
-
-        </div>
-
-
-        <div class="metric">
-
-            <div class="metric-title">
-                15 MIN
-            </div>
-
-            <div
-                id="m15"
-                class="metric-value"
-            >
-                WAITING
-            </div>
-
-        </div>
-
-
-        <div class="metric">
-
-            <div class="metric-title">
-                5S CONFIRMATION
-            </div>
-
-            <div
-                id="m5s"
-                class="metric-value"
-            >
-                REQUIRED
-            </div>
-
-        </div>
-
-
-        <div class="metric">
-
-            <div class="metric-title">
-                MOMENTUM
-            </div>
-
-            <div
-                id="momentum"
-                class="metric-value"
-            >
-                WAITING
-            </div>
-
-        </div>
-
-
-        <div class="metric">
-
-            <div class="metric-title">
-                VOLATILITY
-            </div>
-
-            <div
-                id="volatility"
-                class="metric-value"
-            >
-                WAITING
-            </div>
-
-        </div>
-
-    </div>
-
+<h2>📈 Market State</h2>
+<div class="metrics">
+<div class="metric"><div class="metric-title">1 MIN</div><div id="m1" class="metric-value">WAITING</div></div>
+<div class="metric"><div class="metric-title">5 MIN</div><div id="m5" class="metric-value">WAITING</div></div>
+<div class="metric"><div class="metric-title">15 MIN</div><div id="m15" class="metric-value">WAITING</div></div>
+<div class="metric"><div class="metric-title">5S CONFIRMATION</div><div id="m5s" class="metric-value">REQUIRED</div></div>
+<div class="metric"><div class="metric-title">MOMENTUM</div><div id="momentum" class="metric-value">WAITING</div></div>
+<div class="metric"><div class="metric-title">VOLATILITY</div><div id="volatility" class="metric-value">WAITING</div></div>
 </div>
-
-
-<!-- =====================================================
-     VERIFIED DATA INFORMATION
-===================================================== -->
+</div>
 
 <div class="card full">
-
-    <h2>🔌 Verified Market Data</h2>
-
-    <div
-        id="dataStatus"
-        class="warning"
-    >
-        LIVE DATA REQUIRED
-    </div>
-
-    <p
-        style="
-        font-size:12px;
-        color:#8290a2;
-        line-height:1.6
-        "
-    >
-        The scanner uses verified live market data.
-        It does not manufacture candles, prices or
-        5-second ticks. If valid live data or required
-        confirmation is unavailable, the decision remains
-        NO TRADE.
-    </p>
-
-
-    <div
-        class="connection-box"
-    >
-
-        <strong>Signal policy</strong><br>
-
-        ✔ Real received market data only<br>
-        ✔ Multi-timeframe analysis<br>
-        ✔ Running candle analysis<br>
-        ✔ Real 5-second confirmation when available<br>
-        ✔ CALL / PUT only after required filters<br>
-        ✖ No fabricated data<br>
-        ✖ No automatic trade execution
-
-    </div>
-
+<h2>🔌 Verified Market Data</h2>
+<div id="dataStatus" class="warning">LIVE DATA REQUIRED</div>
+<p style="font-size:12px;color:#8290a2;line-height:1.6">
+The scanner uses verified live market data. It does not manufacture candles, prices or 5-second ticks.
+If valid live data or required confirmation is unavailable, the decision remains NO TRADE.
+</p>
+<div class="connection-box">
+<strong>Signal policy</strong><br>
+✔ Real received market data only<br>
+✔ Multi-timeframe analysis<br>
+✔ Running candle analysis<br>
+✔ Real 5-second confirmation when available<br>
+✔ CALL / PUT only after required filters<br>
+✖ No fabricated data<br>
+✖ No automatic trade execution
 </div>
-
-
-<!-- =====================================================
-     MANUAL DATA / DEBUG
-===================================================== -->
+</div>
 
 <details class="card full">
-
-    <summary
-        style="
-        cursor:pointer;
-        font-weight:700;
-        font-size:14px
-        "
-    >
-        🛠 Manual Verified Data / Debug Mode
-    </summary>
-
-
-    <p
-        style="
-        font-size:12px;
-        color:#8290a2;
-        line-height:1.6
-        "
-    >
-        Normally these fields are not required.
-        The live scanner should obtain data from the
-        backend live feed automatically.
-    </p>
-
-
-    <label>
-        1M Candle Data — JSON
-    </label>
-
-    <textarea
-        id="data1m"
-        placeholder="Verified 1-minute candle data"
-    ></textarea>
-
-
-    <label>
-        5M Candle Data — JSON
-    </label>
-
-    <textarea
-        id="data5m"
-        placeholder="Verified 5-minute candle data"
-    ></textarea>
-
-
-    <label>
-        15M Candle Data — JSON
-    </label>
-
-    <textarea
-        id="data15m"
-        placeholder="Verified 15-minute candle data"
-    ></textarea>
-
-
-    <label>
-        5-Second Tick Data — JSON
-    </label>
-
-    <textarea
-        id="data5s"
-        placeholder="Verified 5-second tick data"
-    ></textarea>
-
+<summary style="font-weight:700;font-size:14px">🛠 Manual Verified Data / Debug Mode</summary>
+<p style="font-size:12px;color:#8290a2;line-height:1.6">Normally these fields are not required. Live scanning uses the backend feed automatically.</p>
+<label>1M Candle Data — JSON</label><textarea id="data1m"></textarea>
+<label>5M Candle Data — JSON</label><textarea id="data5m"></textarea>
+<label>15M Candle Data — JSON</label><textarea id="data15m"></textarea>
+<label>5-Second Tick Data — JSON</label><textarea id="data5s"></textarea>
 </details>
 
-
-<!-- =====================================================
-     HISTORY
-===================================================== -->
-
 <div class="card full">
-
-    <h2>🕘 Signal History</h2>
-
-    <div
-        id="history"
-        class="history"
-    >
-
-        <div
-            style="color:#657387"
-        >
-            No signals yet.
-        </div>
-
-    </div>
-
+<h2>🕘 Signal History</h2>
+<div id="history" class="history"><div style="color:#657387">No signals yet.</div></div>
 </div>
-
 </div>
-
-
-<footer>
-
-    QX AI Live Scanner V4 • Manual trading only •
-    No automatic trade execution
-
-</footer>
-
+<footer>QX AI Live Scanner V4 • Manual trading only • No automatic trade execution</footer>
 </div>
-
 
 <script>
+let sessionToken=null, selectedSymbol="EURUSD", liveTimer=null, isLoggedIn=false;
 
-let sessionToken = null;
-
-let selectedSymbol = "EURUSD";
-
-let liveTimer = null;
-
-let isLoggedIn = false;
-
-
-/* =========================================================
-   STATUS
-========================================================= */
-
-function setStatus(text, type="normal") {
-
-    const dot =
-        document.getElementById("statusDot");
-
-    const label =
-        document.getElementById("statusText");
-
-    label.textContent = text;
-
-    dot.style.background =
-        type === "success"
-            ? "#35d477"
-            : type === "error"
-                ? "#ff6674"
-                : type === "warning"
-                    ? "#e4a84c"
-                    : "#777";
+function setStatus(text,type="normal"){
+ const dot=document.getElementById("statusDot"), label=document.getElementById("statusText");
+ label.textContent=text;
+ dot.style.background=type==="success"?"#35d477":type==="error"?"#ff6674":type==="warning"?"#e4a84c":"#777";
 }
 
-
-/* =========================================================
-   LOGIN
-========================================================= */
-
-async function login() {
-
-    const password =
-        document.getElementById("password").value.trim();
-
-    const message =
-        document.getElementById("loginMessage");
-
-    if (!password) {
-
-        message.textContent =
-            "Password required.";
-
-        message.className =
-            "error";
-
-        return;
-    }
-
-
-    const button =
-        document.getElementById("loginBtn");
-
-    button.disabled = true;
-
-    button.textContent =
-        "LOGINNING...";
-
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/login",
-                {
-                    method:"POST",
-
-                    headers:{
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:JSON.stringify({
-                        password:password
-                    })
-                }
-            );
-
-
-        const data =
-            await response.json();
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                data.detail ||
-                "Login failed"
-            );
-        }
-
-
-        sessionToken =
-            data.token;
-
-        isLoggedIn = true;
-
-
-        document
-            .getElementById("connectBtn")
-            .disabled = false;
-
-
-        message.textContent =
-            "Login successful.";
-
-        message.className =
-            "success";
-
-
-        setStatus(
-            "SYSTEM READY — AUTHENTICATED",
-            "success"
-        );
-
-
-        /*
-         * Automatically prepare the selected market.
-         */
-
-        selectedSymbol =
-            document
-                .getElementById("symbol")
-                .value;
-
-
-        await connectMarket();
-
-
-    } catch(error) {
-
-        sessionToken = null;
-
-        isLoggedIn = false;
-
-        message.textContent =
-            error.message ||
-            "Authentication failed.";
-
-        message.className =
-            "error";
-
-
-        setStatus(
-            "AUTHENTICATION FAILED",
-            "error"
-        );
-
-    } finally {
-
-        button.disabled = false;
-
-        button.textContent =
-            "LOGIN";
-    }
+async function login(){
+ const password=document.getElementById("password").value.trim();
+ const message=document.getElementById("loginMessage");
+ if(!password){message.textContent="Password is required.";message.className="error";return;}
+ try{
+  const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password})});
+  const data=await r.json();
+  if(!r.ok) throw new Error(data.detail||"Login failed");
+  sessionToken=data.token; isLoggedIn=true;
+  message.textContent="Login successful."; message.className="success";
+  document.getElementById("connectBtn").disabled=false;
+  setStatus("AUTHENTICATED — CONNECT LIVE MARKET","success");
+ }catch(e){sessionToken=null;isLoggedIn=false;message.textContent=e.message;message.className="error";setStatus("LOGIN FAILED","error");}
 }
 
-
-/* =========================================================
-   MARKET CONNECT
-========================================================= */
-
-async function connectMarket() {
-
-    if (!sessionToken) {
-
-        setStatus(
-            "LOGIN REQUIRED",
-            "error"
-        );
-
-        return;
-    }
-
-
-    const symbol =
-        document
-            .getElementById("symbol")
-            .value
-            .trim()
-            .toUpperCase();
-
-
-    if (!symbol) {
-
-        setStatus(
-            "MARKET REQUIRED",
-            "warning"
-        );
-
-        return;
-    }
-
-
-    selectedSymbol =
-        symbol;
-
-
-    const button =
-        document.getElementById("connectBtn");
-
-    button.disabled = true;
-
-    button.textContent =
-        "CONNECTING...";
-
-
-    document
-        .getElementById("liveSymbol")
-        .textContent =
-        "Market: " + symbol;
-
-
-    setStatus(
-        "CONNECTING TO VERIFIED LIVE DATA...",
-        "warning"
-    );
-
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/live?symbol=" +
-                encodeURIComponent(symbol),
-                {
-                    method:"GET",
-
-                    headers:{
-                        "X-Session":
-                            sessionToken
-                    }
-                }
-            );
-
-
-        const result =
-            await response.json();
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                result.detail ||
-                "Live connection failed"
-            );
-        }
-
-
-        updateLiveDisplay(
-            result.data
-        );
-
-
-        /*
-         * Enable scan only after authenticated
-         * backend communication works.
-         */
-
-        document
-            .getElementById("scanBtn")
-            .disabled = false;
-
-
-        setStatus(
-            "LIVE MARKET READY",
-            "success"
-        );
-
-
-        /*
-         * Start periodic live status updates.
-         */
-
-        startLivePolling();
-
-
-    } catch(error) {
-
-        document
-            .getElementById("scanBtn")
-            .disabled = true;
-
-
-        document
-            .getElementById("liveConnection")
-            .textContent =
-            "Live feed error: " +
-            error.message;
-
-
-        setStatus(
-            "LIVE DATA CONNECTION ERROR",
-            "error"
-        );
-
-    } finally {
-
-        button.disabled = false;
-
-        button.textContent =
-            "CONNECT LIVE MARKET";
-    }
+function handleSessionExpired(){
+ sessionToken=null;isLoggedIn=false;
+ if(liveTimer){clearInterval(liveTimer);liveTimer=null;}
+ document.getElementById("connectBtn").disabled=true;
+ document.getElementById("scanBtn").disabled=true;
+ setStatus("SESSION EXPIRED — LOGIN REQUIRED","error");
+ displayNoTrade("Your session has expired. Please login again.");
 }
 
-
-/* =========================================================
-   LIVE POLLING
-========================================================= */
-
-function startLivePolling() {
-
-    if (liveTimer) {
-
-        clearInterval(liveTimer);
-    }
-
-
-    /*
-     * Do not poll too aggressively.
-     */
-
-    liveTimer =
-        setInterval(
-            refreshLiveData,
-            3000
-        );
+async function connectMarket(){
+ if(!sessionToken){alert("Please login first.");return;}
+ const symbol=document.getElementById("symbol").value.trim().toUpperCase();
+ selectedSymbol=symbol;
+ const btn=document.getElementById("connectBtn"); btn.disabled=true; btn.textContent="CONNECTING...";
+ try{
+  const r=await fetch("/api/live?symbol="+encodeURIComponent(symbol),{headers:{"X-Session":sessionToken}});
+  const result=await r.json();
+  if(r.status===401){handleSessionExpired();return;}
+  if(!r.ok)throw new Error(result.detail||"Live connection failed");
+  updateLiveDisplay(result.data);
+  document.getElementById("scanBtn").disabled=false;
+  setStatus("LIVE MARKET READY","success");
+  startLivePolling();
+ }catch(e){
+  document.getElementById("scanBtn").disabled=true;
+  document.getElementById("liveConnection").textContent="Live feed error: "+e.message;
+  setStatus("LIVE DATA CONNECTION ERROR","error");
+ }finally{btn.disabled=false;btn.textContent="CONNECT LIVE MARKET";}
 }
 
-
-async function refreshLiveData() {
-
-    if (!sessionToken ||
-        !selectedSymbol) {
-
-        return;
-    }
-
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/live?symbol=" +
-                encodeURIComponent(
-                    selectedSymbol
-                ),
-                {
-                    method:"GET",
-
-                    headers:{
-                        "X-Session":
-                            sessionToken
-                    }
-                }
-            );
-
-
-        if (response.status === 401) {
-
-            handleSessionExpired();
-
-            return;
-        }
-
-
-        if (!response.ok) {
-
-            return;
-        }
-
-
-        const result =
-            await response.json();
-
-
-        if (result.success &&
-            result.data) {
-
-            updateLiveDisplay(
-                result.data
-            );
-        }
-
-
-    } catch(error) {
-
-        /*
-         * Temporary network errors should not
-         * create a fake signal.
-         */
-
-        document
-            .getElementById(
-                "liveConnection"
-            )
-            .textContent =
-            "Live feed temporarily unavailable.";
-
-    }
+function startLivePolling(){
+ if(liveTimer)clearInterval(liveTimer);
+ liveTimer=setInterval(refreshLiveData,3000);
+}
+async function refreshLiveData(){
+ if(!sessionToken||!selectedSymbol)return;
+ try{
+  const r=await fetch("/api/live?symbol="+encodeURIComponent(selectedSymbol),{headers:{"X-Session":sessionToken}});
+  if(r.status===401){handleSessionExpired();return;}
+  if(!r.ok)return;
+  const result=await r.json();
+  if(result.success&&result.data)updateLiveDisplay(result.data);
+ }catch(e){}
 }
 
-
-/* =========================================================
-   LIVE DISPLAY
-========================================================= */
-
-function updateLiveDisplay(data) {
-
-    if (!data) {
-
-        return;
-    }
-
-
-    const symbol =
-        data.symbol ||
-        selectedSymbol ||
-        "—";
-
-
-    const price =
-        data.last_price;
-
-
-    document
-        .getElementById("liveSymbol")
-        .textContent =
-        "Market: " + symbol;
-
-
-    if (price !== null &&
-        price !== undefined) {
-
-        document
-            .getElementById("livePrice")
-            .textContent =
-            Number(price).toFixed(5);
-
-    } else {
-
-        document
-            .getElementById("livePrice")
-            .textContent =
-            "WAITING";
-    }
-
-
-    const connected =
-        Boolean(data.connected);
-
-
-    const age =
-        data.last_tick_age;
-
-
-    if (connected &&
-        price !== null &&
-        price !== undefined) {
-
-        let ageText =
-            "Receiving live ticks";
-
-        if (typeof age === "number") {
-
-            ageText =
-                "Last tick: " +
-                age.toFixed(1) +
-                " sec ago";
-        }
-
-
-        document
-            .getElementById(
-                "liveConnection"
-            )
-            .textContent =
-            "LIVE FEED CONNECTED • " +
-            ageText;
-
-
-        document
-            .getElementById(
-                "dataStatus"
-            )
-            .textContent =
-            "VERIFIED LIVE DATA RECEIVED";
-
-
-        document
-            .getElementById(
-                "dataStatus"
-            )
-            .className =
-            "success";
-
-    } else {
-
-        document
-            .getElementById(
-                "liveConnection"
-            )
-            .textContent =
-            "LIVE FEED CONNECTING / WAITING FOR DATA";
-
-
-        document
-            .getElementById(
-                "dataStatus"
-            )
-            .textContent =
-            "WAITING FOR VERIFIED LIVE DATA";
-
-
-        document
-            .getElementById(
-                "dataStatus"
-            )
-            .className =
-            "warning";
-    }
+function updateLiveDisplay(data){
+ if(!data)return;
+ const symbol=data.symbol||selectedSymbol||"—", price=data.last_price, connected=Boolean(data.connected), age=data.last_tick_age;
+ document.getElementById("liveSymbol").textContent="Market: "+symbol;
+ document.getElementById("livePrice").textContent=price!=null?Number(price).toFixed(5):"WAITING";
+ if(connected&&price!=null){
+  let ageText="Receiving live ticks";
+  if(typeof age==="number")ageText="Last tick: "+age.toFixed(1)+" sec ago";
+  document.getElementById("liveConnection").textContent="LIVE FEED CONNECTED • "+ageText;
+  document.getElementById("dataStatus").textContent="VERIFIED LIVE DATA RECEIVED";
+  document.getElementById("dataStatus").className="success";
+ }else{
+  document.getElementById("liveConnection").textContent="LIVE FEED CONNECTING / WAITING FOR DATA";
+  document.getElementById("dataStatus").textContent="WAITING FOR VERIFIED LIVE DATA";
+  document.getElementById("dataStatus").className="warning";
+ }
 }
 
-
-/* =========================================================
-   SCAN
-========================================================= */
-
-async function requestScan() {
-
-    if (!sessionToken) {
-
-        alert(
-            "Please login first."
-        );
-
-        return;
-    }
-
-
-    const symbol =
-        document
-            .getElementById("symbol")
-            .value
-            .trim()
-            .toUpperCase();
-
-
-    if (!symbol) {
-
-        displayNoTrade(
-            "Market symbol is required."
-        );
-
-        return;
-    }
-
-
-    selectedSymbol =
-        symbol;
-
-
-    const button =
-        document.getElementById("scanBtn");
-
-
-    button.disabled = true;
-
-    button.textContent =
-        "ANALYZING...";
-
-
-    setStatus(
-        "ANALYZING LIVE MARKET...",
-        "warning"
-    );
-
-
-    try {
-
-        /*
-         * IMPORTANT:
-         *
-         * Sending symbol tells the backend to use
-         * its REAL live feed.
-         *
-         * No candles or 5-second ticks are invented
-         * by this frontend.
-         */
-
-        const payload = {
-
-            symbol: symbol
-        };
-
-
-        const response =
-            await fetch(
-                "/api/scan",
-                {
-                    method:"POST",
-
-                    headers:{
-
-                        "Content-Type":
-                            "application/json",
-
-                        "X-Session":
-                            sessionToken
-                    },
-
-                    body:
-                        JSON.stringify(
-                            payload
-                        )
-                }
-            );
-
-
-        const result =
-            await response.json();
-
-
-        if (response.status === 401) {
-
-            handleSessionExpired();
-
-            return;
-        }
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                result.detail ||
-                "Scanner request failed"
-            );
-        }
-
-
-        displayResult(
-            result
-        );
-
-
-    } catch(error) {
-
-        displayNoTrade(
-            error.message
-        );
-
-
-        setStatus(
-            "SCANNER ERROR",
-            "error"
-        );
-
-    } finally {
-
-        button.disabled = false;
-
-        button.textContent =
-            "SCAN MARKET";
-    }
+async function requestScan(){
+ if(!sessionToken){alert("Please login first.");return;}
+ selectedSymbol=document.getElementById("symbol").value.trim().toUpperCase();
+ const button=document.getElementById("scanBtn");
+ button.disabled=true;button.textContent="ANALYZING...";
+ setStatus("ANALYZING LIVE MARKET...","warning");
+ try{
+  const r=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json","X-Session":sessionToken},body:JSON.stringify({symbol:selectedSymbol})});
+  const result=await r.json();
+  if(r.status===401){handleSessionExpired();return;}
+  if(!r.ok)throw new Error(result.detail||"Scanner request failed");
+  displayResult(result);
+ }catch(e){displayNoTrade(e.message);setStatus("SCANNER ERROR","error");}
+ finally{button.disabled=false;button.textContent="SCAN MARKET";}
 }
 
+function directionFromScore(s){
+ if(typeof s!=="number")return "WAITING";
+ if(s>0)return "CALL";
+ if(s<0)return "PUT";
+ return "NEUTRAL";
+}
+function updateMetric(id,value){document.getElementById(id).textContent=String(value??"—").toUpperCase();}
 
-/* =========================================================
-   DISPLAY RESULT
-========================================================= */
+function displayResult(result){
+ const signal=String(result.signal||result.decision||"NO TRADE").toUpperCase();
+ const confidence=result.confidence??result.score??"—";
+ const reasons=Array.isArray(result.reasons)?result.reasons:[];
+ const scores=result.timeframe_scores||{};
+ const ind=result.indicators||{};
+ const ratio=Number(result.confirmation_ratio||0);
 
-function displayResult(result) {
+ document.getElementById("signal").textContent=signal==="CALL"?"CALL":signal==="PUT"?"PUT":"NO TRADE";
+ document.getElementById("signal").className="signal-word "+(signal==="CALL"?"call":signal==="PUT"?"put":"no-trade");
+ document.getElementById("confidence").textContent="Confidence / Score: "+confidence;
+ document.getElementById("reason").innerHTML=reasons.length
+   ? "<strong>Analysis reasons</strong><ul class='reason-list'>"+reasons.slice(0,12).map(x=>"<li>"+escapeHtml(String(x))+"</li>").join("")+"</ul>"
+   : escapeHtml(result.reason||result.message||"Analysis completed.");
 
-    const signal =
-        String(
-            result.signal ||
-            result.decision ||
-            "NO TRADE"
-        ).toUpperCase();
+ updateMetric("m1",directionFromScore(Number(scores["1m"])));
+ updateMetric("m5",directionFromScore(Number(scores["5m"])));
+ updateMetric("m15",directionFromScore(Number(scores["15m"])));
+ updateMetric("m5s",ratio>0?(Math.round(ratio*100)+"% "+(ratio>=0.67?"PASS":"FAIL")):"REQUIRED");
 
+ let momentum="WAITING";
+ if(ind.rsi!=null&&ind.macd_hist!=null){
+   if(Number(ind.rsi)>=55&&Number(ind.macd_hist)>0)momentum="BULLISH";
+   else if(Number(ind.rsi)<=45&&Number(ind.macd_hist)<0)momentum="BEARISH";
+   else momentum="MIXED";
+ }
+ updateMetric("momentum",momentum);
 
-    const confidence =
-        result.confidence ??
-        result.score ??
-        "—";
+ let volatility="WAITING";
+ if(ind.bb_width!=null){
+   const bw=Number(ind.bb_width);
+   volatility=bw>0.003?"HIGH":bw<0.001?"LOW":"NORMAL";
+ }
+ updateMetric("volatility",volatility);
 
+ if(result.last_price!=null)document.getElementById("livePrice").textContent=Number(result.last_price).toFixed(5);
 
-    const reason =
-        result.reason ||
-        result.message ||
-        "Analysis completed.";
-
-
-    const signalBox =
-        document.getElementById(
-            "signal"
-        );
-
-
-    /*
-     * Only allow the three valid decisions.
-     */
-
-    const finalSignal =
-        signal === "CALL"
-            ? "CALL"
-            : signal === "PUT"
-                ? "PUT"
-                : "NO TRADE";
-
-
-    signalBox.textContent =
-        finalSignal;
-
-
-    signalBox.className =
-        "signal-word " +
-        (
-            finalSignal === "CALL"
-                ? "call"
-                : finalSignal === "PUT"
-                    ? "put"
-                    : "no-trade"
-        );
-
-
-    document
-        .getElementById(
-            "confidence"
-        )
-        .textContent =
-        "Confidence / Score: " +
-        confidence;
-
-
-    document
-        .getElementById(
-            "reason"
-        )
-        .textContent =
-        reason;
-
-
-    updateMetric(
-        "m1",
-        result.m1 ||
-        result.trend_1m ||
-        "—"
-    );
-
-
-    updateMetric(
-        "m5",
-        result.m5 ||
-        result.trend_5m ||
-        "—"
-    );
-
-
-    updateMetric(
-        "m15",
-        result.m15 ||
-        result.trend_15m ||
-        "—"
-    );
-
-
-    updateMetric(
-        "m5s",
-        result.confirmation_5s ||
-        result.confirmation ||
-        "—"
-    );
-
-
-    updateMetric(
-        "momentum",
-        result.momentum ||
-        "—"
-    );
-
-
-    updateMetric(
-        "volatility",
-        result.volatility ||
-        "—"
-    );
-
-
-    /*
-     * Show live price if returned.
-     */
-
-    if (
-        result.last_price !== undefined &&
-        result.last_price !== null
-    ) {
-
-        document
-            .getElementById(
-                "livePrice"
-            )
-            .textContent =
-            Number(
-                result.last_price
-            ).toFixed(5);
-    }
-
-
-    /*
-     * Do not treat NO TRADE as an error.
-     */
-
-    if (finalSignal === "NO TRADE") {
-
-        setStatus(
-            "NO TRADE — FILTERS NOT CONFIRMED",
-            "warning"
-        );
-
-    } else {
-
-        setStatus(
-            "SIGNAL CONFIRMED FOR REVIEW",
-            "success"
-        );
-    }
-
-
-    addHistory(
-        finalSignal,
-        confidence
-    );
+ if(signal==="NO TRADE")setStatus("NO TRADE — FILTERS NOT CONFIRMED","warning");
+ else setStatus("SIGNAL CONFIRMED FOR REVIEW","success");
+ addHistory(signal,confidence);
 }
 
-
-/* =========================================================
-   NO TRADE
-========================================================= */
-
-function displayNoTrade(reason) {
-
-    const signal =
-        document.getElementById(
-            "signal"
-        );
-
-
-    signal.textContent =
-        "NO TRADE";
-
-
-    signal.className =
-        "signal-word no-trade";
-
-
-    document
-        .getElementById(
-            "confidence"
-        )
-        .textContent =
-        "No verified signal";
-
-
-    document
-        .getElementById(
-            "reason"
-        )
-        .textContent =
-        reason ||
-        "Insufficient verified market data.";
+function displayNoTrade(reason){
+ document.getElementById("signal").textContent="NO TRADE";
+ document.getElementById("signal").className="signal-word no-trade";
+ document.getElementById("confidence").textContent="No verified signal";
+ document.getElementById("reason").textContent=reason||"Insufficient verified market data.";
 }
 
-
-/* =========================================================
-   METRIC
-========================================================= */
-
-function updateMetric(
-    id,
-    value
-) {
-
-    document
-        .getElementById(id)
-        .textContent =
-        String(
-            value
-        ).toUpperCase();
+function addHistory(signal,confidence){
+ const history=document.getElementById("history");
+ const empty=history.querySelector("div[style]");
+ if(empty)history.innerHTML="";
+ const row=document.createElement("div");row.className="history-row";
+ const time=document.createElement("span");time.textContent=new Date().toLocaleTimeString();
+ const sig=document.createElement("strong");sig.textContent=signal;
+ const score=document.createElement("span");score.textContent=confidence;
+ row.append(time,sig,score);history.prepend(row);
+ while(history.children.length>20)history.removeChild(history.lastChild);
 }
-
-
-/* =========================================================
-   HISTORY
-========================================================= */
-
-function addHistory(
-    signal,
-    confidence
-) {
-
-    const history =
-        document.getElementById(
-            "history"
-        );
-
-
-    const empty =
-        history.querySelector(
-            "div[style]"
-        );
-
-
-    if (empty) {
-
-        history.innerHTML = "";
-    }
-
-
-    const row =
-        document.createElement(
-            "div"
-        );
-
-
-    row.className =
-        "history-row";
-
-
-    const time =
-        document.createElement(
-            "span"
-        );
-
-
-    time.textContent =
-        new Date()
-            .toLocaleTimeString();
-
-
-    const signalElement =
-        document.createElement(
-            "strong"
-        );
-
-
-    signalElement.textContent =
-        signal;
-
-
-    const score =
-        document.createElement(
-            "span"
-        );
-
-
-    score.textContent =
-        confidence;
-
-
-    row.appendChild(time);
-
-    row.appendChild(signalElement);
-
-    row.appendChild(score);
-
-
-    history.prepend(row);
+function escapeHtml(s){
+ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
 }
-
-
-/* =========================================================
-   SESSION EXPIRED
-========================================================= */
-
-function handleSessionExpired() {
-
-    sessionToken = null;
-
-    isLoggedIn = false;
-
-
-    if (liveTimer) {
-
-        clearInterval(
-            liveTimer
-        );
-
-        liveTimer = null;
-    }
-
-
-    document
-        .getElementById(
-            "connectBtn"
-        )
-        .disabled = true;
-
-
-    document
-        .getElementById(
-            "scanBtn"
-        )
-        .disabled = true;
-
-
-    setStatus(
-        "SESSION EXPIRED — LOGIN REQUIRED",
-        "error"
-    );
-
-
-    displayNoTrade(
-        "Your session has expired. Please login again."
-    );
+async function healthCheck(){
+ try{const r=await fetch("/api/health");const d=await r.json();if(d.ok)setStatus("SYSTEM ONLINE — LOGIN REQUIRED","info");}
+ catch(e){setStatus("SYSTEM OFFLINE","error");}
 }
-
-
-/* =========================================================
-   HEALTH CHECK
-========================================================= */
-
-async function healthCheck() {
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/health"
-            );
-
-
-        if (!response.ok) {
-
-            throw new Error();
-        }
-
-
-        const data =
-            await response.json();
-
-
-        if (data.ok) {
-
-            setStatus(
-                "SERVER ONLINE — LOGIN REQUIRED"
-            );
-        }
-
-
-    } catch(error) {
-
-        setStatus(
-            "SERVER OFFLINE",
-            "error"
-        );
-    }
-}
-
-
-/* =========================================================
-   MARKET CHANGE
-========================================================= */
-
-document
-    .getElementById("symbol")
-    .addEventListener(
-        "change",
-        async function(){
-
-            if (!sessionToken) {
-
-                return;
-            }
-
-
-            selectedSymbol =
-                this.value
-                .trim()
-                .toUpperCase();
-
-
-            displayNoTrade(
-                "Market changed. Waiting for live data confirmation."
-            );
-
-
-            await connectMarket();
-        }
-    );
-
-
-/* =========================================================
-   ENTER KEY LOGIN
-========================================================= */
-
-document
-    .getElementById("password")
-    .addEventListener(
-        "keydown",
-        function(event){
-
-            if (
-                event.key === "Enter"
-            ) {
-
-                login();
-            }
-        }
-    );
-
-
-/* =========================================================
-   INITIALIZATION
-========================================================= */
-
 healthCheck();
-
 </script>
-
 </body>
 </html>
