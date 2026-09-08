@@ -1,7 +1,5 @@
-import base64
 import hashlib
 import hmac
-import json
 import os
 import secrets
 import sqlite3
@@ -22,8 +20,32 @@ def _db():
     return conn
 
 
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _iso(dt):
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def _parse_dt(value):
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _token_hash(token):
+    return hashlib.sha256(
+        token.encode("utf-8")
+    ).hexdigest()
+
+
+def _new_token():
+    return secrets.token_urlsafe(32)
+
+
 def init_db():
     with _db() as db:
+
+        # Customer accounts
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,166 +59,104 @@ def init_db():
                 created_at TEXT NOT NULL
             )
         """)
+
+        # Customer login sessions
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at REAL NOT NULL,
+                expires_at REAL NOT NULL
+            )
+        """)
+
+        # Admin login sessions
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS admin_sessions (
+                token_hash TEXT PRIMARY KEY,
+                created_at REAL NOT NULL,
+                expires_at REAL NOT NULL
+            )
+        """)
+
+        db.commit()
+
+
+def _cleanup_sessions():
+    now = time.time()
+
+    with _db() as db:
+        db.execute(
+            "DELETE FROM user_sessions WHERE expires_at <= ?",
+            (now,),
+        )
+
+        db.execute(
+            "DELETE FROM admin_sessions WHERE expires_at <= ?",
+            (now,),
+        )
+
         db.commit()
 
 
 def _hash_password(password, salt=None):
     salt = salt or secrets.token_hex(16)
+
     digest = hashlib.pbkdf2_hmac(
         "sha256",
-        password.encode(),
+        password.encode("utf-8"),
         bytes.fromhex(salt),
         200_000,
     )
+
     return salt, digest.hex()
 
 
 def _check_password(password, salt, expected):
-    _, actual = _hash_password(password, salt)
-    return hmac.compare_digest(actual, expected)
-
-
-def _now():
-    return datetime.now(timezone.utc)
-
-
-def _iso(dt):
-    return dt.astimezone(timezone.utc).isoformat()
-
-
-def _parse_dt(value):
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def _session_secret():
-    """
-    Stable secret used to sign session tokens.
-
-    IMPORTANT:
-    Set SESSION_SECRET in Render Environment Variables.
-    If it is not set, ADMIN_PASSWORD is used as a fallback so
-    the system can still work during initial testing.
-    """
-    secret = os.getenv("SESSION_SECRET", "").strip()
-
-    if not secret:
-        secret = os.getenv("ADMIN_PASSWORD", "").strip()
-
-    if not secret:
-        raise RuntimeError(
-            "SESSION_SECRET environment variable is not configured"
-        )
-
-    return secret.encode("utf-8")
-
-
-def _b64encode(data):
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def _b64decode(value):
-    padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode(
-        value + padding
+    _, actual = _hash_password(
+        password,
+        salt,
     )
 
-
-def _create_session_token(kind, user_id=None):
-    now = int(time.time())
-
-    payload = {
-        "kind": kind,
-        "iat": now,
-        "exp": now + TOKEN_TTL,
-    }
-
-    if user_id is not None:
-        payload["user_id"] = int(user_id)
-
-    payload_bytes = json.dumps(
-        payload,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-
-    encoded_payload = _b64encode(payload_bytes)
-
-    signature = hmac.new(
-        _session_secret(),
-        encoded_payload.encode("ascii"),
-        hashlib.sha256,
-    ).digest()
-
-    encoded_signature = _b64encode(signature)
-
-    return f"{encoded_payload}.{encoded_signature}"
-
-
-def _read_session_token(token, expected_kind):
-    if not token:
-        raise PermissionError("Authentication required")
-
-    try:
-        parts = token.split(".")
-
-        if len(parts) != 2:
-            raise PermissionError("Invalid session")
-
-        encoded_payload = parts[0]
-        encoded_signature = parts[1]
-
-        expected_signature = hmac.new(
-            _session_secret(),
-            encoded_payload.encode("ascii"),
-            hashlib.sha256,
-        ).digest()
-
-        actual_signature = _b64decode(encoded_signature)
-
-        if not hmac.compare_digest(
-            actual_signature,
-            expected_signature,
-        ):
-            raise PermissionError("Invalid session")
-
-        payload = json.loads(
-            _b64decode(encoded_payload).decode("utf-8")
-        )
-
-        if payload.get("kind") != expected_kind:
-            raise PermissionError("Invalid session")
-
-        now = int(time.time())
-
-        if now >= int(payload.get("exp", 0)):
-            raise PermissionError("Session expired")
-
-        return payload
-
-    except PermissionError:
-        raise
-    except Exception:
-        raise PermissionError("Invalid session")
+    return hmac.compare_digest(
+        actual,
+        expected,
+    )
 
 
 def _row_user(row):
     if not row:
         return None
 
-    expires = _parse_dt(row["expires_at"])
+    expires = _parse_dt(
+        row["expires_at"]
+    )
 
     return {
         "id": row["id"],
         "username": row["username"],
         "expires_at": row["expires_at"],
         "max_devices": row["max_devices"],
-        "device_bound": bool(row["device_id"]),
-        "active": bool(row["active"]),
+        "device_bound": bool(
+            row["device_id"]
+        ),
+        "active": bool(
+            row["active"]
+        ),
         "expired": expires <= _now(),
     }
 
 
-def create_user(username, password, days, max_devices=1):
+# =========================================================
+# USER MANAGEMENT
+# =========================================================
+
+def create_user(
+    username,
+    password,
+    days,
+    max_devices=1,
+):
     username = username.strip().lower()
 
     if not username or len(username) < 3:
@@ -219,13 +179,18 @@ def create_user(username, password, days, max_devices=1):
             "max_devices must be between 1 and 5"
         )
 
-    salt, digest = _hash_password(password)
+    salt, digest = _hash_password(
+        password
+    )
 
     now = _now()
-    expires = now + timedelta(days=days)
+    expires = now + timedelta(
+        days=days
+    )
 
     try:
         with _db() as db:
+
             cur = db.execute(
                 """
                 INSERT INTO users(
@@ -250,7 +215,9 @@ def create_user(username, password, days, max_devices=1):
 
             db.commit()
 
-            return get_user(cur.lastrowid)
+            return get_user(
+                cur.lastrowid
+            )
 
     except sqlite3.IntegrityError:
         raise ValueError(
@@ -260,6 +227,7 @@ def create_user(username, password, days, max_devices=1):
 
 def get_user(user_id):
     with _db() as db:
+
         row = db.execute(
             "SELECT * FROM users WHERE id=?",
             (user_id,),
@@ -270,19 +238,42 @@ def get_user(user_id):
 
 def list_users():
     with _db() as db:
+
         rows = db.execute(
-            "SELECT * FROM users ORDER BY id DESC"
+            """
+            SELECT *
+            FROM users
+            ORDER BY id DESC
+            """
         ).fetchall()
 
-    return [_row_user(row) for row in rows]
+    return [
+        _row_user(row)
+        for row in rows
+    ]
 
 
-def login_user(username, password, device_id=None):
+# =========================================================
+# CUSTOMER LOGIN
+# =========================================================
+
+def login_user(
+    username,
+    password,
+    device_id=None,
+):
+    _cleanup_sessions()
+
     username = username.strip().lower()
 
     with _db() as db:
+
         row = db.execute(
-            "SELECT * FROM users WHERE username=?",
+            """
+            SELECT *
+            FROM users
+            WHERE username=?
+            """,
             (username,),
         ).fetchone()
 
@@ -300,14 +291,19 @@ def login_user(username, password, device_id=None):
             "Account is suspended"
         )
 
-    if _parse_dt(row["expires_at"]) <= _now():
+    if _parse_dt(
+        row["expires_at"]
+    ) <= _now():
         raise PermissionError(
             "Subscription expired"
         )
 
-    device_id = (device_id or "").strip()
+    device_id = (
+        device_id or ""
+    ).strip()
 
     if device_id:
+
         bound = row["device_id"]
 
         if (
@@ -320,37 +316,97 @@ def login_user(username, password, device_id=None):
             )
 
         if not bound:
+
             with _db() as db:
+
                 db.execute(
-                    "UPDATE users SET device_id=? WHERE id=?",
-                    (device_id, row["id"]),
+                    """
+                    UPDATE users
+                    SET device_id=?
+                    WHERE id=?
+                    """,
+                    (
+                        device_id,
+                        row["id"],
+                    ),
                 )
+
                 db.commit()
 
-    token = _create_session_token(
-        kind="user",
-        user_id=row["id"],
-    )
+    token = _new_token()
+    token_hash = _token_hash(token)
 
-    return token, get_user(row["id"])
+    now = time.time()
+    expires = now + TOKEN_TTL
+
+    with _db() as db:
+
+        db.execute(
+            """
+            INSERT INTO user_sessions(
+                token_hash,
+                user_id,
+                created_at,
+                expires_at
+            )
+            VALUES(?,?,?,?)
+            """,
+            (
+                token_hash,
+                row["id"],
+                now,
+                expires,
+            ),
+        )
+
+        db.commit()
+
+    return token, get_user(
+        row["id"]
+    )
 
 
 def require_user(token):
-    payload = _read_session_token(
-        token,
-        expected_kind="user",
-    )
+    _cleanup_sessions()
 
-    user_id = payload.get("user_id")
+    if not token:
+        raise PermissionError(
+            "Authentication required"
+        )
 
-    if not user_id:
+    token_hash = _token_hash(token)
+
+    with _db() as db:
+
+        session = db.execute(
+            """
+            SELECT *
+            FROM user_sessions
+            WHERE token_hash=?
+            """,
+            (token_hash,),
+        ).fetchone()
+
+    if not session:
         raise PermissionError(
             "Invalid session"
         )
 
-    user = get_user(user_id)
+    if time.time() >= session["expires_at"]:
+        raise PermissionError(
+            "Session expired"
+        )
 
-    if not user or not user["active"]:
+    user = get_user(
+        session["user_id"]
+    )
+
+    if not user:
+        raise PermissionError(
+            "Invalid session"
+        )
+
+    if not user["active"]:
         raise PermissionError(
             "Account is suspended"
         )
@@ -363,7 +419,13 @@ def require_user(token):
     return user
 
 
+# =========================================================
+# ADMIN LOGIN
+# =========================================================
+
 def admin_login(password):
+    _cleanup_sessions()
+
     expected = os.getenv(
         "ADMIN_PASSWORD",
         "",
@@ -382,27 +444,88 @@ def admin_login(password):
             "Invalid admin password"
         )
 
-    return _create_session_token(
-        kind="admin"
-    )
+    token = _new_token()
+    token_hash = _token_hash(token)
+
+    now = time.time()
+    expires = now + TOKEN_TTL
+
+    with _db() as db:
+
+        db.execute(
+            """
+            INSERT INTO admin_sessions(
+                token_hash,
+                created_at,
+                expires_at
+            )
+            VALUES(?,?,?)
+            """,
+            (
+                token_hash,
+                now,
+                expires,
+            ),
+        )
+
+        db.commit()
+
+    return token
 
 
 def require_admin(token):
-    _read_session_token(
-        token,
-        expected_kind="admin",
-    )
+    _cleanup_sessions()
+
+    if not token:
+        raise PermissionError(
+            "Admin authentication required"
+        )
+
+    token_hash = _token_hash(token)
+
+    with _db() as db:
+
+        session = db.execute(
+            """
+            SELECT *
+            FROM admin_sessions
+            WHERE token_hash=?
+            """,
+            (token_hash,),
+        ).fetchone()
+
+    if not session:
+        raise PermissionError(
+            "Invalid admin session"
+        )
+
+    if time.time() >= session["expires_at"]:
+        raise PermissionError(
+            "Admin session expired"
+        )
 
 
-def extend_user(user_id, days):
+# =========================================================
+# SUBSCRIPTION MANAGEMENT
+# =========================================================
+
+def extend_user(
+    user_id,
+    days,
+):
     if days < 1 or days > 3650:
         raise ValueError(
             "Days must be between 1 and 3650"
         )
 
     with _db() as db:
+
         row = db.execute(
-            "SELECT expires_at FROM users WHERE id=?",
+            """
+            SELECT expires_at
+            FROM users
+            WHERE id=?
+            """,
             (user_id,),
         ).fetchone()
 
@@ -439,11 +562,17 @@ def extend_user(user_id, days):
 
         db.commit()
 
-    return get_user(user_id)
+    return get_user(
+        user_id
+    )
 
 
-def set_active(user_id, active):
+def set_active(
+    user_id,
+    active,
+):
     with _db() as db:
+
         cur = db.execute(
             """
             UPDATE users
@@ -463,7 +592,13 @@ def set_active(user_id, active):
 
         db.commit()
 
-    return get_user(user_id)
+    return get_user(
+        user_id
+    )
 
+
+# =========================================================
+# INITIALIZE DATABASE
+# =========================================================
 
 init_db()
